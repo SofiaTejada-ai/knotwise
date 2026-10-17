@@ -104,7 +104,15 @@ export function useRealtimeVoice() {
         const audioEl = new Audio();
         audioEl.autoplay = true;
         audioRef.current = audioEl;
-        audioEl.srcObject = new MediaStream(pc.getReceivers().map((r) => r.track));
+        const remoteStream = new MediaStream();
+        audioEl.srcObject = remoteStream;
+        // The tutor's audio track only exists once the connection answers,
+        // so attach it when it arrives. Reading the receivers earlier gives
+        // an empty stream and the tutor is never heard.
+        pc.ontrack = (e) => {
+          remoteStream.addTrack(e.track);
+          audioEl.play().catch(() => {});
+        };
         mic.getTracks().forEach((t) => pc.addTrack(t, mic));
 
         const dc = pc.createDataChannel("oai-events");
