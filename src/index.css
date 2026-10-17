@@ -90,3 +90,103 @@
     @apply bg-background text-foreground font-body;
   }
 }
+
+/* Safe Steps lesson styles */
+:root {
+  --ss-accent: #35709e;
+  --ss-accent-soft: #e9f1f8;
+  --ss-accent-border: #c5daec;
+  --ss-found: #2f7d51;
+  --ss-found-bg: #e3f2ea;
+  --ss-hint-border: #dca430;
+  --ss-hint-bg: #fdf6e7;
+}
+.ss-calm {
+  --ss-accent: #6b7280;
+  --ss-accent-soft: #f2f3f5;
+  --ss-accent-border: #d4d7dc;
+  --ss-found: #4b5563;
+  --ss-found-bg: #f2f3f5;
+  --ss-hint-border: #9aa1ab;
+  --ss-hint-bg: #f2f3f5;
+}
+.ss-calm *,
+.ss-calm *::before,
+.ss-calm *::after {
+  transition: none !important;
+  animation: none !important;
+}
+@keyframes ss-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+.ss-orb {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 9999px;
+  background: var(--ss-accent-soft);
+  border: 2px solid var(--ss-accent-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ss-orb-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 9999px;
+  background: var(--ss-accent);
+}
+.ss-speaking .ss-orb {
+  animation: ss-pulse 2.6s ease-in-out infinite;
+}
+.ss-flag {
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.ss-flag.found {
+  background: var(--ss-found-bg);
+  color: var(--ss-found);
+  font-weight: 600;
+}
+.ss-calm .ss-flag.found {
+  background: transparent;
+  color: inherit;
+}
+.ss-flag.hinted {
+  outline: 2px dashed var(--ss-hint-border);
+  outline-offset: 2px;
+}
+.ss-flag.review {
+  background: var(--ss-accent-soft);
+  outline: 2px solid var(--ss-accent-border);
+  outline-offset: 2px;
+}
+.ss-hint-box {
+  background: var(--ss-hint-bg);
+  border: 1px dashed var(--ss-hint-border);
+  color: #374151;
+}
+.ss-stroke {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ss-stroke.active {
+  stroke: var(--ss-accent);
+}
+.ss-stroke.hit {
+  stroke: var(--ss-found);
+}
+.ss-stroke.miss {
+  stroke: #9aa1ab;
+  animation: ss-fade 1s ease forwards;
+}
+.ss-calm .ss-stroke.miss {
+  animation: none;
+  opacity: 0;
+}
+@keyframes ss-fade {
+  to { opacity: 0; }
+}
