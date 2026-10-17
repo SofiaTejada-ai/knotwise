@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Clapperboard } from "lucide-react";
@@ -9,7 +9,7 @@ import StepControls from "@/components/scholarviz/StepControls";
 import NarrationPanel from "@/components/scholarviz/NarrationPanel";
 import SourceHelper from "@/components/scholarviz/SourceHelper";
 import { useAnimationTutor } from "@/hooks/useAnimationTutor";
-import { createVoiceConnection } from "@/hooks/useVoiceConnection";
+import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 
 const SUGGESTIONS = [
   "How does a scam text reach my phone?",
@@ -62,35 +62,38 @@ export default function ScholarViz() {
     }
   };
 
-  // Voice: same microphone flow as the lesson (record, store privately,
-  // transcribe through the backend). No browser text-to-speech.
-  const voiceRef = useRef(null);
-  const startVoice = async () => {
+  // Voice: live two-way session with the tutor (OpenAI Realtime over WebRTC),
+  // same as the lesson page. Spoken questions also build their animation.
+  const {
+    status: sessionStatus,
+    error: sessionError,
+    userTranscript,
+    tutorText,
+    start: startVoiceSession,
+    stop: endVoiceSession,
+  } = useRealtimeVoice();
+  const askedTranscript = useRef(null);
+
+  const startVoice = () => {
     setVoiceNotice(null);
-    if (!voiceRef.current) {
-      voiceRef.current = createVoiceConnection({
-        onTranscribed: (text) => ask(text, { spoken: true }),
-        onError: (msg) => {
-          setVoiceNotice(msg);
-          setRoomState("idle");
-        }
-      });
-    }
-    try {
-      await voiceRef.current.start();
-      setRoomState("listening");
-    } catch (err) {
-      setVoiceNotice("Voice input is not connected yet. You can type your question instead.");
-    }
+    const context = [
+      "Current page: the visual tutor. The student asks questions out loud, you answer, and an animated diagram for their question is being built.",
+      topic ? `The student picked this focus: ${topic.label}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    startVoiceSession(context);
   };
-  const stopVoice = () => {
-    voiceRef.current?.stop();
-    setRoomState("thinking");
-  };
-  const cancelVoice = () => {
-    voiceRef.current?.cancel();
-    setRoomState("idle");
-  };
+
+  // When the student's spoken question is complete, build the animation for
+  // it while the tutor answers live.
+  useEffect(() => {
+    const q = (userTranscript ?? "").trim();
+    if (!q || sessionStatus === "idle" || sessionStatus === "error") return;
+    if (askedTranscript.current === q) return;
+    askedTranscript.current = q;
+    ask(q, { spoken: true });
+  }, [userTranscript, sessionStatus]);
 
   const handleNew = () => {
     tutor.reset();
@@ -193,7 +196,16 @@ export default function ScholarViz() {
         </div>
       </div>
 
-      {roomState === "listening" && <ListeningOverlay onStop={stopVoice} onCancel={cancelVoice} />}
+      {sessionStatus !== "idle" && (
+        <ListeningOverlay
+          status={sessionStatus}
+          userText={userTranscript}
+          tutorText={tutorText}
+          error={sessionError}
+          onRetry={startVoice}
+          onEnd={endVoiceSession}
+        />
+      )}
     </div>
   );
 }
