@@ -56,7 +56,8 @@ export default async function(req) {
       ]
         .filter(Boolean)
         .join('\n'),
-      response_json_schema: SEGMENTS_SCHEMA
+      response_json_schema: SEGMENTS_SCHEMA,
+      model: 'gemini_3_flash'
     });
 
     const segments = (Array.isArray(result?.segments) ? result.segments : [])

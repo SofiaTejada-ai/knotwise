@@ -55,6 +55,8 @@ export default function LiveTutor() {
   const sceneModeRef = useRef("prep");
   const segRef = useRef(null);
   const nudgedRef = useRef(false);
+  const segCacheRef = useRef({}); // prefetched segments per node id
+  const prefetchingRef = useRef({}); // node ids with a prefetch in flight
   useEffect(() => {
     sceneModeRef.current = sceneMode;
   }, [sceneMode]);
@@ -105,6 +107,20 @@ export default function LiveTutor() {
       // The lesson continues without pictures.
     }
     return [{ idea: node.label, spokenText: null, url: null }];
+  };
+
+  // Prepare the next topic's pictures in the background while the current one
+  // is being taught, so moving on is instant instead of another prep wait.
+  const prefetchNext = (node) => {
+    const m = mapRef.current;
+    if (!m || !node) return;
+    const next = m.nodes[m.nodes.findIndex((n) => n.id === node.id) + 1];
+    if (!next || segCacheRef.current[next.id] || prefetchingRef.current[next.id]) return;
+    prefetchingRef.current[next.id] = true;
+    buildPresentation(next).then((segs) => {
+      segCacheRef.current[next.id] = segs;
+      prefetchingRef.current[next.id] = false;
+    });
   };
 
   const openNode = (node) => {
@@ -195,11 +211,11 @@ export default function LiveTutor() {
 
   useEffect(() => {
     if (phase !== "teaching" || voice.status !== "listening") return;
-    if (!mapRef.current) return;
+    if (!mapRef.current || !presentationRef.current) return; // scene must be ready first
     if (nudgedRef.current) return;
     nudgedRef.current = true;
     nudgeAfterConnect();
-  }, [voice.status, phase]);
+  }, [voice.status, phase, presentation]);
 
   const markDone = (id) => {
     if (!id) return;
@@ -235,6 +251,8 @@ export default function LiveTutor() {
         const segs = await buildPresentation(first);
         presentationRef.current = segs;
         setPresentation(segs);
+        prefetchNext(first);
+        nudgedRef.current = true; // the function output below cues the tutor
         voice.sendFunctionCallOutput(
           call_id,
           `Your lesson "${m.title}" is on screen with ${m.nodes.length} topics. The screen shows the topic "${first.label}" with its pictures ready. Say nothing else: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
@@ -321,9 +339,13 @@ export default function LiveTutor() {
         teachingInstructions(m, node.id, practiceRef.current, profileRef.current),
         TEACHING_TOOLS
       );
-      const segs = await buildPresentation(node);
+      // Usually the next topic's pictures were prefetched while the last one
+      // was taught, so this is instant.
+      const segs = segCacheRef.current[node.id] ?? (await buildPresentation(node));
       presentationRef.current = segs;
       setPresentation(segs);
+      prefetchNext(node);
+      nudgedRef.current = true; // the function output below cues the tutor
       voice.sendFunctionCallOutput(
         call_id,
         `The screen now shows the topic "${node.label}" and its pictures are ready. Say nothing first: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
@@ -356,6 +378,8 @@ export default function LiveTutor() {
     setSceneMode("prep");
     sceneModeRef.current = "prep";
     nudgedRef.current = false;
+    segCacheRef.current = {};
+    prefetchingRef.current = {};
 
     const question = (typedQuestion ?? "").trim();
     if (question) {
@@ -369,14 +393,19 @@ export default function LiveTutor() {
         mapRef.current = m;
         openNode(first);
         setPhase("teaching");
-        const segs = await buildPresentation(first);
-        presentationRef.current = segs;
-        setPresentation(segs);
-        await voice.start(profileContext(p), {
+        // Connect the tutor while the pictures are still being prepared, so
+        // the connection time is never felt. The tutor stays silent until the
+        // scene is ready.
+        const connecting = voice.start(profileContext(p), {
           instructions: teachingInstructions(m, first.id, {}, p),
           tools: TEACHING_TOOLS,
           onToolCall: handleToolCall
         });
+        const segs = await buildPresentation(first);
+        presentationRef.current = segs;
+        setPresentation(segs);
+        prefetchNext(first);
+        await connecting;
       } catch (err) {
         setHomeError("I could not build a lesson for that question. Try rephrasing it.");
         setPhase("home");
@@ -447,6 +476,8 @@ export default function LiveTutor() {
 
   const askNewQuestion = () => {
     const p = profileRef.current;
+    segCacheRef.current = {};
+    prefetchingRef.current = {};
     setMap(null);
     mapRef.current = null;
     setActiveNodeId(null);
