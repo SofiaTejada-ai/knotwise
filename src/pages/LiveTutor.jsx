@@ -187,7 +187,9 @@ export default function LiveTutor() {
         `(Reconnected. The screen shows the picture for part ${(segRef.current ?? 0) + 1} of "${node.label}". If there are more parts, call show_segment with the next part number. If that was the last part, ask exactly: "Does that make sense?" and wait.)`
       );
     } else {
-      voice.requestResponse(`Begin the topic "${node.label}" now: call show_segment(0).`);
+      voice.requestResponse(
+        `(The student is ready and the topic is "${node.label}". Say nothing first: call show_segment(0) immediately, then speak exactly the text the tool result gives you.)`
+      );
     }
   };
 
@@ -235,7 +237,7 @@ export default function LiveTutor() {
         setPresentation(segs);
         voice.sendFunctionCallOutput(
           call_id,
-          `Your lesson "${m.title}" is on screen with ${m.nodes.length} topics. The screen shows the topic "${first.label}". Call show_segment(0) now to begin.`
+          `Your lesson "${m.title}" is on screen with ${m.nodes.length} topics. The screen shows the topic "${first.label}" with its pictures ready. Say nothing else: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
         );
       } catch (err) {
         voice.sendFunctionCallOutput(
@@ -324,7 +326,7 @@ export default function LiveTutor() {
       setPresentation(segs);
       voice.sendFunctionCallOutput(
         call_id,
-        `The screen now shows the topic "${node.label}" and its pictures are ready. Call show_segment(0) to begin presenting it.`
+        `The screen now shows the topic "${node.label}" and its pictures are ready. Say nothing first: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
       );
     }
   };
