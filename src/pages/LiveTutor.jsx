@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import ListeningOverlay from "@/components/safeSteps/ListeningOverlay";
 import TutorHome from "@/components/livetutor/TutorHome";
+import QuietRoomCheck from "@/components/livetutor/QuietRoomCheck";
 import KnowledgeMapCanvas from "@/components/livetutor/KnowledgeMapCanvas";
 import NodePanel from "@/components/livetutor/NodePanel";
 import EvidenceBar from "@/components/livetutor/EvidenceBar";
@@ -21,7 +22,8 @@ import {
 // cyber8LiveTutor: personalized home -> open spoken question -> a concept
 // map the tutor teaches node by node with live two-way voice.
 export default function LiveTutor() {
-  const [phase, setPhase] = useState("home"); // home | asking | teaching | wrapup
+  const [phase, setPhase] = useState("home"); // home | ready | asking | teaching | wrapup
+  const [pending, setPending] = useState(null); // { profile, typedQuestion } awaiting the student's go
   const [profile, setProfile] = useState(null);
   const [map, setMap] = useState(null);
   const [activeNodeId, setActiveNodeId] = useState(null);
@@ -296,7 +298,20 @@ export default function LiveTutor() {
 
   // --- Screens ---
   if (phase === "home") {
-    return <TutorHome onStart={startSession} error={homeError} busy={buildingMap} />;
+    const prepareSession = (p, typedQuestion) => {
+      setPending({ profile: p, typedQuestion });
+      setPhase("ready");
+    };
+    return <TutorHome onStart={prepareSession} error={homeError} busy={buildingMap} />;
+  }
+
+  if (phase === "ready") {
+    return (
+      <QuietRoomCheck
+        onBegin={() => startSession(pending?.profile, pending?.typedQuestion ?? "")}
+        onBack={() => setPhase("home")}
+      />
+    );
   }
 
   if (phase === "asking") {
