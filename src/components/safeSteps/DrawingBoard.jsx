@@ -4,7 +4,7 @@ import MessageBubble from "./MessageBubble";
 
 const toPath = (points) => points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
 
-export default function DrawingBoard({ calm, foundIds, hintedIds, onResults, boardEmpty }) {
+export default function DrawingBoard({ calm, zoom, foundIds, hintedIds, onResults, boardEmpty }) {
   const containerRef = useRef(null);
   const strokesRef = useRef([]);
   const currentRef = useRef(null);
@@ -100,7 +100,7 @@ export default function DrawingBoard({ calm, foundIds, hintedIds, onResults, boa
   const strokes = [...strokesRef.current, ...(currentRef.current ? [currentRef.current] : [])];
   return (
     <div ref={containerRef} className="relative inline-block max-w-full" style={{ touchAction: "none" }}>
-      <MessageBubble foundIds={foundIds} hintedIds={hintedIds} />
+      <MessageBubble foundIds={foundIds} hintedIds={hintedIds} zoom={zoom} />
       <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
         {strokes.map((s, i) => (
           <path

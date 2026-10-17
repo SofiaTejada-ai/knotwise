@@ -4,7 +4,7 @@ import * as L from "@/lib/safeStepsLogic";
 import DrawingBoard from "./DrawingBoard";
 import MessageBubble from "./MessageBubble";
 
-export default function StepCircle({ state, calm, send }) {
+export default function StepCircle({ state, calm, send, zoom }) {
   const foundCount = L.accounted(state).length;
   const done = L.allAccounted(state);
   return (
@@ -13,6 +13,7 @@ export default function StepCircle({ state, calm, send }) {
       {state.inputMode === "draw" ? (
         <DrawingBoard
           calm={calm}
+          zoom={zoom}
           foundIds={state.found}
           hintedIds={state.outlined}
           boardEmpty={foundCount === 0}
@@ -21,6 +22,7 @@ export default function StepCircle({ state, calm, send }) {
       ) : (
         <MessageBubble
           interactive
+          zoom={zoom}
           foundIds={state.found}
           hintedIds={state.outlined}
           onTap={(id) => send({ type: "TAP", id })}

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import * as L from "@/lib/safeStepsLogic";
 
-export default function TopBar({ state, seconds, calm, voiceOn, tutorOn, onCalm, onVoice, onTutor, onPause, onWhy, onReset }) {
+export default function TopBar({ state, seconds, calm, onCalm, onPause, onWhy, onReset }) {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   const title = L.STEPS.find((s) => s.num === state.step)?.title ?? "";
@@ -17,14 +17,6 @@ export default function TopBar({ state, seconds, calm, voiceOn, tutorOn, onCalm,
           <div className="flex items-center gap-2">
             <Switch id="calm-switch" checked={calm} onCheckedChange={onCalm} aria-label="Calm mode" />
             <label htmlFor="calm-switch" className="text-sm text-slate-700">Calm mode</label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="voice-switch" checked={voiceOn} onCheckedChange={onVoice} aria-label="Voice" />
-            <label htmlFor="voice-switch" className="text-sm text-slate-700">Voice</label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="tutor-switch" checked={tutorOn} onCheckedChange={onTutor} aria-label="AI tutor" />
-            <label htmlFor="tutor-switch" className="text-sm text-slate-700">AI tutor</label>
           </div>
           <Button variant="outline" size="sm" onClick={onPause}>Need a break?</Button>
           <Button variant="outline" size="sm" onClick={onWhy}>Why this works</Button>

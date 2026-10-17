@@ -190,3 +190,41 @@
 @keyframes ss-fade {
   to { opacity: 0; }
 }
+
+/* Tutor room states */
+.ss-state-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  background: var(--ss-accent-soft);
+  color: var(--ss-accent);
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+}
+.ss-thinking .ss-character {
+  animation: ss-blend 3.2s ease-in-out infinite;
+}
+@keyframes ss-blend {
+  0%, 100% { background-color: var(--ss-accent-soft); }
+  50% { background-color: #f4ecdf; }
+}
+.ss-square {
+  position: absolute;
+  left: 10%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  background-color: var(--ss-accent);
+  animation: ss-square-move 2.4s ease-in-out infinite;
+}
+@keyframes ss-square-move {
+  0%, 100% { transform: translateY(-90px); }
+  50% { transform: translateY(90px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ss-square,
+  .ss-thinking .ss-character {
+    animation: none !important;
+  }
+}

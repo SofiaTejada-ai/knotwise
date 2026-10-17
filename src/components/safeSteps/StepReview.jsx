@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button";
 import * as L from "@/lib/safeStepsLogic";
 import MessageBubble from "./MessageBubble";
 
-export default function StepReview({ state, send }) {
+export default function StepReview({ state, send, zoom }) {
   const idx = state.reviewIndex;
   const highlight = idx >= 0 && idx < L.FLAGS.length ? L.FLAGS[idx].id : null;
   return (
     <div className="space-y-4">
       <p className="max-w-xl text-lg text-slate-700">Every red flag you found is marked below. Go over them one at a time.</p>
-      <MessageBubble forceFound highlightId={highlight} />
+      <MessageBubble forceFound highlightId={highlight} zoom={zoom} />
       <div>
         {idx < 4 ? (
           <Button size="lg" onClick={() => send({ type: "REVIEW_NEXT" })}>

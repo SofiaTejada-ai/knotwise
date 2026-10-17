@@ -10,6 +10,7 @@ export default function MessageBubble({
   highlightId = null,
   interactive = false,
   onTap,
+  zoom = 1,
 }) {
   const renderSeg = (seg, i) => {
     const key = `${seg.kind}-${seg.id ?? "p"}-${i}`;
@@ -45,8 +46,12 @@ export default function MessageBubble({
 
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 text-sm leading-snug text-slate-400">{header.map(renderSeg)}</div>
-      <div className="text-lg leading-relaxed text-slate-800">{body.map(renderSeg)}</div>
+      <div className="mb-2 leading-snug text-slate-400" style={{ fontSize: `${Math.round(14 * zoom)}px` }}>
+        {header.map(renderSeg)}
+      </div>
+      <div className="leading-relaxed text-slate-800" style={{ fontSize: `${Math.round(18 * zoom)}px` }}>
+        {body.map(renderSeg)}
+      </div>
     </div>
   );
 }
