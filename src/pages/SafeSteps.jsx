@@ -12,7 +12,7 @@ import WhyThisWorks from "@/components/safeSteps/WhyThisWorks";
 import MessageToolbar from "@/components/safeSteps/MessageToolbar";
 import ZoomNodes from "@/components/safeSteps/ZoomNodes";
 import ListeningOverlay from "@/components/safeSteps/ListeningOverlay";
-import { createVoiceConnection } from "@/hooks/useVoiceConnection";
+import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 
 const TUTOR_EVENTS = new Set(["STROKES", "TAP", "HINT", "QUIZ_ANSWER", "ASK"]);
 const ALLOWED_EVIDENCE = ["F1", "F2", "F3", "F4", "F5", "stat"];
@@ -204,33 +204,26 @@ export default function SafeSteps() {
     setTour(true);
   };
 
-  // ---- Voice connection (integration point) ----
-  const voiceRef = useRef(null);
-  const startVoice = async () => {
+  // ---- Live two-way voice session (OpenAI Realtime over WebRTC) ----
+  const {
+    status: sessionStatus,
+    error: sessionError,
+    userTranscript,
+    tutorText,
+    start: startVoiceSession,
+    stop: endVoiceSession,
+  } = useRealtimeVoice();
+
+  const startVoice = () => {
     setVoiceNotice(null);
-    if (!voiceRef.current) {
-      voiceRef.current = createVoiceConnection({
-        onTranscribed: (text) => send({ type: "ASK", question: text }),
-        onError: (msg) => {
-          setVoiceNotice(msg);
-          showSpeaking();
-        },
-      });
-    }
-    try {
-      await voiceRef.current.start();
-      setRoomState("listening");
-    } catch (err) {
-      setVoiceNotice("Voice input is not connected yet. You can type your question instead.");
-    }
-  };
-  const stopVoice = () => {
-    voiceRef.current?.stop();
-    setRoomState("thinking");
-  };
-  const cancelVoice = () => {
-    voiceRef.current?.cancel();
-    setRoomState("idle");
+    const context = [
+      "Current lesson: spotting scam text messages, for example fake delivery or bank texts.",
+      `Current lesson step: ${state.step} of 6. Scam flags found so far: ${state.found.length} of ${L.FLAG_IDS.length}.`,
+      calm
+        ? "Learning preference: the student prefers a calm, low-stimulation interaction."
+        : "Learning preference: standard interaction.",
+    ].join(" ");
+    startVoiceSession(context);
   };
 
   const hasAgent = agentLines && agentLines.sayId === state.say.id;
@@ -262,7 +255,16 @@ export default function SafeSteps() {
       {zoomOpen && (
         <ZoomNodes state={state} onClose={() => setZoomOpen(false)} onTap={(id) => send({ type: "TAP", id })} />
       )}
-      {roomState === "listening" && <ListeningOverlay onStop={stopVoice} onCancel={cancelVoice} />}
+      {sessionStatus !== "idle" && (
+        <ListeningOverlay
+          status={sessionStatus}
+          userText={userTranscript}
+          tutorText={tutorText}
+          error={sessionError}
+          onRetry={startVoice}
+          onEnd={endVoiceSession}
+        />
+      )}
       <BreakOverlay paused={state.paused} onResume={() => send({ type: "RESUME" })} />
       <WhyThisWorks open={whyOpen} onOpenChange={setWhyOpen} />
     </div>
