@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { Map as MapIcon, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { pickShapes, getShape } from "@/components/livetutor/NodeShapes";
+import NodeShapeArt from "@/components/livetutor/NodeShapes";
 
 const SVG_W = 1000;
 const SVG_H = 440;
-const NODE_W = 168;
-const NODE_H = 100;
+const NODE_W = 160;
+const NODE_H = 120;
 
 // Wrap a label to lines of at most 18 characters (readability on the map).
 function wrapLabel(text, maxChars = 18) {
@@ -22,17 +24,17 @@ function wrapLabel(text, maxChars = 18) {
     }
   });
   if (current) lines.push(current);
-  return lines.slice(0, 4);
+  return lines.slice(0, 3);
 }
 
 // Stable layout: nodes never move; only the camera (viewBox) travels.
 function layout(nodes) {
   const n = Math.max(nodes.length, 1);
-  const step = nodes.length > 1 ? 740 / (n - 1) : 0;
+  const step = nodes.length > 1 ? 800 / (n - 1) : 0;
   return nodes.map((node, i) => ({
     id: node.id,
-    x: nodes.length > 1 ? 130 + i * step : 500,
-    y: i % 2 === 0 ? 150 : 290
+    x: nodes.length > 1 ? 100 + i * step : 500,
+    y: i % 2 === 0 ? 150 : 292
   }));
 }
 
@@ -48,6 +50,7 @@ export default function KnowledgeMapCanvas({ map, activeNodeId, doneNodes = [], 
     positions.forEach((p) => (m[p.id] = p));
     return m;
   }, [positions]);
+  const shapeById = useMemo(() => pickShapes(nodes, map?.title ?? ""), [nodes, map?.title]);
 
   const applyView = () => {
     const el = svgRef.current;
@@ -64,7 +67,7 @@ export default function KnowledgeMapCanvas({ map, activeNodeId, doneNodes = [], 
     let target;
     const pos = viewedId ? posById[viewedId] : null;
     if (pos) {
-      const w = 420;
+      const w = 430;
       const h = (w * SVG_H) / SVG_W;
       target = { x: pos.x - w / 2, y: pos.y - h / 2, w, h };
     } else {
@@ -106,8 +109,11 @@ export default function KnowledgeMapCanvas({ map, activeNodeId, doneNodes = [], 
                   x={mx}
                   y={my - 6}
                   textAnchor="middle"
-                  className="fill-slate-400 font-mono"
                   fontSize={11}
+                  className="fill-slate-500 font-mono"
+                  stroke="white"
+                  strokeWidth={4}
+                  paintOrder="stroke"
                 >
                   {e.label.slice(0, 20)}
                 </text>
@@ -117,55 +123,66 @@ export default function KnowledgeMapCanvas({ map, activeNodeId, doneNodes = [], 
         })}
         {nodes.map((node) => {
           const pos = posById[node.id];
+          const shape = getShape(shapeById[node.id]);
           const isActive = node.id === activeNodeId;
           const isDone = doneNodes.includes(node.id);
           const labelLines = wrapLabel(node.label);
+          const index = nodes.findIndex((n) => n.id === node.id) + 1;
           return (
-            <g key={node.id} className="cursor-pointer" onClick={() => setViewedId(node.id)}>
+            <g
+              key={node.id}
+              className="cursor-pointer"
+              onClick={() => setViewedId(node.id)}
+              transform={`translate(${pos.x}, ${pos.y})`}
+            >
               {isActive && (
-                <rect
-                  x={pos.x - NODE_W / 2 - 6}
-                  y={pos.y - NODE_H / 2 - 6}
-                  width={NODE_W + 12}
-                  height={NODE_H + 12}
-                  rx={18}
-                  className={reducedMotion ? "stroke-blue-500" : "ss-node-focus stroke-blue-500"}
-                  strokeWidth={3}
-                  fill="none"
-                />
-              )}
-              <rect
-                x={pos.x - NODE_W / 2}
-                y={pos.y - NODE_H / 2}
-                width={NODE_W}
-                height={NODE_H}
-                rx={14}
-                className={isActive ? "fill-blue-50 stroke-blue-400" : "fill-white stroke-slate-300"}
-                strokeWidth={2}
-              />
-              <text x={pos.x} y={pos.y - 26} textAnchor="middle" fontSize={12} className="fill-slate-400 font-mono">
-                {nodes.findIndex((n) => n.id === node.id) + 1}
-              </text>
-              <text x={pos.x} y={pos.y + 6} textAnchor="middle" className="fill-slate-700 font-mono" fontSize={13}>
-                {labelLines.map((line, li) => (
-                  <tspan key={li} x={pos.x} dy={li === 0 ? 0 : 16}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-              {isDone && (
                 <g>
-                  <circle cx={pos.x + NODE_W / 2 - 14} cy={pos.y - NODE_H / 2 + 14} r={11} className="fill-emerald-500" />
-                  <Check
-                    x={pos.x + NODE_W / 2 - 14 - 4}
-                    y={pos.y - NODE_H / 2 + 14 - 4}
-                    width={8}
-                    height={8}
-                    className="stroke-white"
-                    strokeWidth={3}
+                  {/* soft color halo behind the silhouette */}
+                  <ellipse cx="0" cy="-14" rx="40" ry="36" fill={shape.color} opacity={0.1} />
+                  {/* dashed selection ring around the artwork */}
+                  <ellipse
+                    cx="0"
+                    cy="-14"
+                    rx="48"
+                    ry="42"
+                    fill="none"
+                    stroke={shape.color}
+                    strokeWidth={2.5}
+                    strokeDasharray="7 5"
+                    className={reducedMotion ? undefined : "ss-node-focus"}
                   />
                 </g>
               )}
+              {/* silhouette artwork, drawn centered above the label */}
+              <g transform="translate(0, -14)">
+                <NodeShapeArt shapeId={shape.id} active={isActive} />
+              </g>
+              {/* order badge */}
+              <circle cx="-36" cy="-42" r="10" fill={shape.color} />
+              <text x="-36" y="-38" textAnchor="middle" fontSize={11} fontWeight="700" className="fill-white font-mono">
+                {index}
+              </text>
+              {/* completed badge */}
+              {isDone && (
+                <g>
+                  <circle cx="38" cy="-42" r="11" className="fill-emerald-500" />
+                  <Check x={34} y={-46} width={8} height={8} className="stroke-white" strokeWidth={3} />
+                </g>
+              )}
+              {/* label beside the artwork, wrapped for readability */}
+              {labelLines.map((line, li) => (
+                <text
+                  key={li}
+                  x={0}
+                  y={38 + li * 15}
+                  textAnchor="middle"
+                  fontSize={13}
+                  fontWeight={isActive ? 700 : 400}
+                  className={isActive ? "fill-slate-900 font-mono" : "fill-slate-600 font-mono"}
+                >
+                  {line}
+                </text>
+              ))}
             </g>
           );
         })}
