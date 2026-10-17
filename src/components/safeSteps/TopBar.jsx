@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import * as L from "@/lib/safeStepsLogic";
@@ -18,6 +19,9 @@ export default function TopBar({ state, seconds, calm, onCalm, onPause, onWhy, o
             <Switch id="calm-switch" checked={calm} onCheckedChange={onCalm} aria-label="Calm mode" />
             <label htmlFor="calm-switch" className="text-sm text-slate-700">Calm mode</label>
           </div>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/scholarviz">Visual tutor</Link>
+          </Button>
           <Button variant="outline" size="sm" onClick={onPause}>Need a break?</Button>
           <Button variant="outline" size="sm" onClick={onWhy}>Why this works</Button>
           <Button variant="outline" size="sm" onClick={onReset}>Reset lesson</Button>

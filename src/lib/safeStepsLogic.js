@@ -153,7 +153,7 @@ var LINES = {
     "This comes from an FTC press release.",
     "In 2024, people reported losing 470 million dollars to scams that started with a text."
   ],
-  quizReady: ["Ready for a quiz? It has 3 short questions and no timer."],
+  quizReady: ["Ready for a quiz? It has a few short questions and no timer."],
   quizNotYet: ["That is fine. You can practice circling again."],
   quizRight: ["Yes, that is right."],
   quizUnsure: [
@@ -201,6 +201,38 @@ var SCENARIOS = [
     best: "scam",
     hint: "Look again. Did you buy this headset?",
     explain: "This is a scam. An invoice for something you never bought, with a link to pay, is fake.",
+    sources: ["S2"]
+  }
+];
+var PRACTICES = [
+  {
+    forIndex: 0,
+    context: "You bank at Maple City Bank. You get this text.",
+    from: "(555) 010-0158",
+    message: "Maple City Bank: your card was blocked. Unblock it now at maplecity-secure.help/card",
+    best: "scam",
+    hint: "Look again. Does your bank fix card problems through a link in a text?",
+    explain: "This is a scam. A bank problem plus a link in a text is the same trick as before.",
+    sources: ["S2"]
+  },
+  {
+    forIndex: 1,
+    context: "You reserved a book at the City Library yesterday.",
+    from: "City Library",
+    message: "Hi Sam, the book you reserved is ready for pickup at the front desk until Friday.",
+    best: "check",
+    hint: "Look again. Did you reserve a book, and does this text ask for money or a link?",
+    explain: "This one looks okay. You did reserve the book, and it has no link and no payment.",
+    sources: ["S2"]
+  },
+  {
+    forIndex: 2,
+    context: "You did not order any photos.",
+    from: "(555) 010-0125",
+    message: "Order #55301: your 20 photo prints are ready. Pay the $6 shipping fee at prints-ship.help/pay",
+    best: "scam",
+    hint: "Look again. Did you order these prints?",
+    explain: "This is a scam. An order you never made, plus a link to pay, is fake.",
     sources: ["S2"]
   }
 ];
@@ -285,6 +317,8 @@ var freshBoard = () => ({
 });
 var freshQuiz = () => ({
   phase: "ready",
+  items: SCENARIOS.slice(),
+  inserted: [],
   index: 0,
   tries: 0,
   status: "open",
@@ -478,7 +512,8 @@ function reducer(s, a) {
     case "QUIZ_ANSWER": {
       const q = s.quiz;
       if (q.phase !== "question" || q.status === "right" || q.status === "explained") return s;
-      const sc = SCENARIOS[q.index];
+      const items = q.items ?? SCENARIOS;
+      const sc = items[q.index];
       if (a.choice === sc.best) {
         return say({ ...s, quiz: { ...q, picked: a.choice, status: "right" } }, [...LINES.quizRight, sc.explain]);
       }
@@ -489,16 +524,25 @@ function reducer(s, a) {
       if (tries === 1) {
         return say({ ...s, quiz: { ...q, picked: a.choice, tries, status: "hint" } }, [sc.hint]);
       }
-      return say({ ...s, quiz: { ...q, picked: a.choice, tries, status: "explained" } }, [sc.explain]);
+      let items2 = items;
+      if (!(q.inserted ?? []).includes(q.index)) {
+        const practice = PRACTICES.find((p) => p.forIndex === q.index);
+        if (practice) items2 = [...items.slice(0, q.index + 1), practice, ...items.slice(q.index + 1)];
+      }
+      return say(
+        { ...s, quiz: { ...q, items: items2, inserted: [...(q.inserted ?? []), q.index], picked: a.choice, tries, status: "explained" } },
+        [sc.explain, "I will give you one more question like this one to practice."]
+      );
     }
     case "QUIZ_NEXT": {
+      const items = s.quiz.items ?? SCENARIOS;
       const i = s.quiz.index + 1;
-      if (i >= SCENARIOS.length) {
+      if (i >= items.length) {
         return say(complete({ ...s, quiz: { ...s.quiz, phase: "done" } }, 6), LINES.quizDone);
       }
       return say(
-        { ...s, quiz: { phase: "question", index: i, tries: 0, status: "open", picked: null } },
-        [`Question ${i + 1} of ${SCENARIOS.length}.`, SCENARIOS[i].context]
+        { ...s, quiz: { ...s.quiz, phase: "question", index: i, tries: 0, status: "open", picked: null } },
+        [`Question ${i + 1} of ${items.length}.`, items[i].context]
       );
     }
     case "PAUSE":

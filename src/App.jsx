@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import SafeSteps from './pages/SafeSteps';
+import ScholarViz from './pages/ScholarViz';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -37,6 +38,7 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Add your page Route elements here */}
       <Route path="/" element={<SafeSteps />} />
+      <Route path="/scholarviz" element={<ScholarViz />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

@@ -9,7 +9,7 @@ export default function QuizPanel({ state, send }) {
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-slate-800">Ready for a quiz?</h2>
-        <p className="text-lg text-slate-700">It has 3 short questions and no timer.</p>
+        <p className="text-lg text-slate-700">It has a few short questions and no timer.</p>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <Button size="lg" onClick={() => send({ type: "QUIZ_READY", answer: "yes" })}>
             Yes, start
@@ -42,7 +42,7 @@ export default function QuizPanel({ state, send }) {
     );
   }
 
-  const sc = L.SCENARIOS[q.index];
+  const sc = (q.items ?? L.SCENARIOS)[q.index];
   const answered = q.status === "right" || q.status === "explained";
   const explain =
     q.status === "explained" || (q.status === "right" && q.picked !== "unsure")
@@ -51,7 +51,7 @@ export default function QuizPanel({ state, send }) {
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-slate-500">
-        Question {q.index + 1} of {L.SCENARIOS.length}
+        Question {q.index + 1} of {(q.items ?? L.SCENARIOS).length}
       </p>
       <p className="text-lg text-slate-800">{sc.context}</p>
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -83,7 +83,7 @@ export default function QuizPanel({ state, send }) {
             </div>
           )}
           <Button size="lg" onClick={() => send({ type: "QUIZ_NEXT" })}>
-            {q.index + 1 < L.SCENARIOS.length ? "Next question" : "Finish"}
+            {q.index + 1 < (q.items ?? L.SCENARIOS).length ? "Next question" : "Finish"}
           </Button>
         </div>
       )}
