@@ -52,6 +52,15 @@ export default function LiveTutor() {
   const notesBusyRef = useRef(false);
   const notesRef = useRef([]);
   const presentationRef = useRef(null);
+  const sceneModeRef = useRef("prep");
+  const segRef = useRef(null);
+  const nudgedRef = useRef(false);
+  useEffect(() => {
+    sceneModeRef.current = sceneMode;
+  }, [sceneMode]);
+  useEffect(() => {
+    segRef.current = segIndex;
+  }, [segIndex]);
   useEffect(() => {
     mapRef.current = map;
   }, [map]);
@@ -161,6 +170,34 @@ export default function LiveTutor() {
     }, 3500);
     return () => clearTimeout(timer);
   }, [voice.userTranscript, voice.tutorText, phase]);
+
+  // Once the voice session is live, tell the tutor where the scene stands so
+  // it begins (or resumes) the presentation. The request only goes out after
+  // the connection is listening, so it is never dropped.
+  const nudgeAfterConnect = () => {
+    const m = mapRef.current;
+    const node = m?.nodes.find((n) => n.id === activeRef.current);
+    if (!m || !node) return;
+    if (sceneModeRef.current === "quiz") {
+      voice.requestResponse(
+        `(Reconnected. The practice quiz is on screen for "${node.label}". Remind the student they can tap or circle their answer, then wait.)`
+      );
+    } else if (sceneModeRef.current === "present") {
+      voice.requestResponse(
+        `(Reconnected. The screen shows the picture for part ${(segRef.current ?? 0) + 1} of "${node.label}". If there are more parts, call show_segment with the next part number. If that was the last part, ask exactly: "Does that make sense?" and wait.)`
+      );
+    } else {
+      voice.requestResponse(`Begin the topic "${node.label}" now: call show_segment(0).`);
+    }
+  };
+
+  useEffect(() => {
+    if (phase !== "teaching" || voice.status !== "listening") return;
+    if (!mapRef.current) return;
+    if (nudgedRef.current) return;
+    nudgedRef.current = true;
+    nudgeAfterConnect();
+  }, [voice.status, phase]);
 
   const markDone = (id) => {
     if (!id) return;
@@ -313,7 +350,10 @@ export default function LiveTutor() {
     setPresentation(null);
     presentationRef.current = null;
     setSegIndex(null);
+    segRef.current = null;
     setSceneMode("prep");
+    sceneModeRef.current = "prep";
+    nudgedRef.current = false;
 
     const question = (typedQuestion ?? "").trim();
     if (question) {
@@ -335,9 +375,6 @@ export default function LiveTutor() {
           tools: TEACHING_TOOLS,
           onToolCall: handleToolCall
         });
-        setTimeout(() => {
-          voice.requestResponse("Begin the lesson now: call show_segment(0).");
-        }, 1500);
       } catch (err) {
         setHomeError("I could not build a lesson for that question. Try rephrasing it.");
         setPhase("home");
@@ -359,17 +396,11 @@ export default function LiveTutor() {
     const p = profileRef.current;
     const m = mapRef.current;
     if (m && activeRef.current) {
-      const node = m.nodes.find((n) => n.id === activeRef.current);
+      nudgedRef.current = false;
       voice.start(profileContext(p), {
         instructions: teachingInstructions(m, activeRef.current, practiceRef.current, p),
         tools: TEACHING_TOOLS,
         onToolCall: handleToolCall
-      }).then(() => {
-        setTimeout(() => {
-          voice.requestResponse(
-            `You are reconnected. Continue the lesson calmly where you left off on "${node?.label ?? "the current topic"}".`
-          );
-        }, 1500);
       });
     } else if (p) {
       voice.start(profileContext(p), {
