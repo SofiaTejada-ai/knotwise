@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Image as ImageIcon, ArrowRight, SkipForward, Sparkles, X } from "lucide-react";
+import { ArrowRight, SkipForward, Sparkles, X } from "lucide-react";
 import ExampleText from "./ExampleText";
 import NodeQuiz from "./NodeQuiz";
 
@@ -11,7 +11,6 @@ export default function NodePanel({
   building,
   onAttempt,
   onStuck,
-  onHelpImage,
   onMoveOn,
   onSkip
 }) {
@@ -39,10 +38,6 @@ export default function NodePanel({
       <NodeQuiz node={node} onAttempt={onAttempt} onStuck={onStuck} />
 
       <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-        <Button size="sm" variant="outline" className="gap-1" onClick={onHelpImage}>
-          <ImageIcon className="h-4 w-4" />
-          Show me a picture
-        </Button>
         <Button size="sm" variant="outline" className="gap-1" onClick={onSkip}>
           <SkipForward className="h-4 w-4" />
           Skip

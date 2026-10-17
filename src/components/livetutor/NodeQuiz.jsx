@@ -41,7 +41,7 @@ export default function NodeQuiz({ node, onAttempt, onStuck, reducedMotion = fal
               data-testid="quiz-choice"
               variant="outline"
               size="sm"
-              className={`w-full justify-start text-left ${
+              className={`w-full justify-start whitespace-normal break-words text-left ${
                 correct && i === practice.correct_index
                   ? "border-emerald-400 bg-emerald-50 text-emerald-700"
                   : wasWrong

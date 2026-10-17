@@ -69,7 +69,7 @@ export default async function(req) {
         `GOAL: ${goal || 'not specified'}`,
         `LEARNING PREFERENCES: ${preferences.join(', ') || 'none given'}`,
         '',
-        'Create a connected concept map of 3 to 5 nodes that teaches this question step by step, ordered from the first idea to the final answer.',
+        'Decide the lesson length yourself: choose the number of nodes that truly fits this topic and the student age or grade range. Use as few as 2 nodes for a small idea and up to 8 for a rich topic. Never pad the lesson with extra nodes. Order them from the first idea to the final answer.',
         'Each node needs: a short label (max 28 characters), a one-sentence description (max 120 characters, plain words), and a concrete everyday example sentence (max 22 words) that contains one key phrase worth thinking about.',
         'Each node also gets a short practice question: exactly 3 answer choices, correct_index (0, 1 or 2), a one-line hint, and a one-line explanation of the correct answer.',
         'Edges connect each node to the node it builds on, with a very short relationship label (max 20 characters).',
@@ -82,7 +82,7 @@ export default async function(req) {
     const raw = result ?? {};
     const nodes = (Array.isArray(raw.nodes) ? raw.nodes : [])
       .filter((n) => n && n.label)
-      .slice(0, 5)
+      .slice(0, 8)
       .map((n, i) => ({
         id: String(n.id || `node_${i + 1}`)
           .toLowerCase()

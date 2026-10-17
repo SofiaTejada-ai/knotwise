@@ -9,6 +9,7 @@ import ScrollToTop from './components/ScrollToTop';
 import SafeSteps from './pages/SafeSteps';
 import ScholarViz from './pages/ScholarViz';
 import LiveTutor from './pages/LiveTutor';
+import ReviewQuiz from './pages/ReviewQuiz';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -41,6 +42,7 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<SafeSteps />} />
       <Route path="/scholarviz" element={<ScholarViz />} />
       <Route path="/livetutor" element={<LiveTutor />} />
+      <Route path="/review" element={<ReviewQuiz />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
