@@ -26,6 +26,31 @@ export default async function(req) {
 
     const body = await req.json().catch(() => ({}));
     const studentContext = typeof body.studentContext === 'string' ? body.studentContext.slice(0, 1000) : '';
+    // cyber8LiveTutor sessions may bring their own tutor instructions and
+    // function tools. Bound and validate everything before passing it on.
+    const rawInstructions = typeof body.instructions === 'string' ? body.instructions.trim() : '';
+    const instructions = rawInstructions ? rawInstructions.slice(0, 6000) : null;
+    const tools = Array.isArray(body.tools)
+      ? body.tools
+          .filter(
+            (t) =>
+              t &&
+              t.type === 'function' &&
+              typeof t.name === 'string' &&
+              /^[a-z0-9_]{1,40}$/.test(t.name) &&
+              typeof t.description === 'string' &&
+              t.description.length <= 500 &&
+              t.parameters &&
+              typeof t.parameters === 'object'
+          )
+          .slice(0, 4)
+          .map((t) => ({
+            type: 'function',
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }))
+      : undefined;
 
     // Stable, privacy-preserving safety identifier for this app user.
     const digest = await crypto.subtle
@@ -48,9 +73,14 @@ export default async function(req) {
         session: {
           type: 'realtime',
           model: MODEL,
-          instructions: studentContext
-            ? `${BASE_INSTRUCTIONS}\n\nSTUDENT CONTEXT: ${studentContext}`
-            : BASE_INSTRUCTIONS,
+          instructions: instructions
+            ? studentContext
+              ? `${instructions}\n\nSTUDENT CONTEXT: ${studentContext}`
+              : instructions
+            : studentContext
+              ? `${BASE_INSTRUCTIONS}\n\nSTUDENT CONTEXT: ${studentContext}`
+              : BASE_INSTRUCTIONS,
+          ...(tools && tools.length ? { tools } : {}),
           audio: {
             output: { voice: VOICE },
             input: {

@@ -223,9 +223,18 @@
   0%, 100% { transform: translateY(-90px); }
   50% { transform: translateY(90px); }
 }
+/* Active node ring on the cyber8LiveTutor concept map */
+.ss-node-focus {
+  animation: ss-node-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ss-node-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.35; }
+}
 @media (prefers-reduced-motion: reduce) {
   .ss-square,
-  .ss-thinking .ss-character {
+  .ss-thinking .ss-character,
+  .ss-node-focus {
     animation: none !important;
   }
 }

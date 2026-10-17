@@ -119,6 +119,9 @@ export default function ScholarViz() {
         <Link to="/" className="ml-2 text-sm text-blue-600 underline">
           Back to lesson
         </Link>
+        <Link to="/livetutor" className="text-sm text-blue-600 underline">
+          Live tutor
+        </Link>
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" disabled={!tutor.scene} onClick={() => tutor.replay()}>
             Replay
