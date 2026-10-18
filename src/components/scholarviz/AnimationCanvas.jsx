@@ -2,7 +2,9 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react
 import gsap from "gsap";
 import { SceneObject, labelOffset, wrapLines, MONO } from "./SceneObjects";
 
-const SPEED = 2.5; // global slowdown so every step is readable
+import { scaled } from "@/lib/animTiming";
+import { trace } from "@/lib/lessonTrace";
+
 const NS = "http://www.w3.org/2000/svg";
 
 function el(tag, attrs = {}) {
@@ -11,8 +13,8 @@ function el(tag, attrs = {}) {
   return e;
 }
 
-function addStepToTimeline(tl, step, layer, scene, onUpdateObject) {
-  const dur = Math.max(0.3, Math.min(3, Number(step.duration) || 1)) * SPEED;
+function addStepToTimeline(tl, step, layer, scene, onUpdateObject, reg) {
+  const dur = scaled(Math.max(0.3, Math.min(3, Number(step.duration) || 1)));
   const color = step.color || "#4f9eff";
   const pos = (id) => {
     const o = (scene.objects ?? []).find((x) => x.id === id);
@@ -138,7 +140,9 @@ function addStepToTimeline(tl, step, layer, scene, onUpdateObject) {
       break;
     }
     case "update_object": {
-      tl.call(() => onUpdateObject(step.target, step.props ?? {}));
+      // Registered so a cancelled timeline still commits this change, in order.
+      const rec = reg ? reg(step.target, step.props ?? {}) : null;
+      tl.call(() => (rec ? rec.fire() : onUpdateObject(step.target, step.props ?? {})));
       tl.to({}, { duration: dur * 0.25 });
       break;
     }
@@ -178,14 +182,27 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
   const applyCam = () =>
     camRef.current?.setAttribute("transform", `translate(${cam.current.x} ${cam.current.y}) scale(${cam.current.scale})`);
   const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  // A newer camera move replaces the running one. The replaced move's promise
+  // is resolved at once (a killed GSAP tween never completes), so nothing that
+  // awaits the camera can wait forever. camSeq lets the replaced sequence stop.
+  const camPending = useRef(null);
+  const camSeq = useRef(0);
   const camTo = (x, y, scale, dur, ease = "power2.inOut") =>
     new Promise((res) => {
+      camPending.current?.();
+      camPending.current = res;
       gsap.to(cam.current, {
-        x, y, scale, duration: reduced() ? 0 : dur, ease, overwrite: true,
+        x, y, scale, duration: reduced() ? 0 : scaled(dur), ease, overwrite: true,
         onUpdate: applyCam,
-        onComplete: () => { applyCam(); res(); }
+        onComplete: () => {
+          applyCam();
+          if (camPending.current === res) camPending.current = null;
+          trace("camera_done");
+          res();
+        }
       });
     });
+  const dropDots = () => travelRef.current?.querySelectorAll("[data-cam-dot]").forEach((n) => n.remove());
   const nodePos = (id) => (sceneRef.current?.objects ?? []).find((o) => o.id === id);
   // Keeps the focused node low on screen so a picture fits above it.
   const viewFor = (p, z) => ({ x: 450 - p.x * z, y: 370 - p.y * z });
@@ -194,30 +211,34 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
     const focusNode = (id, z = 1.7) => {
       const p = nodePos(id);
       if (!p) return Promise.resolve();
+      camSeq.current += 1;
       const v = viewFor(p, z);
-      return camTo(v.x, v.y, z, 1.1);
+      return camTo(v.x, v.y, z, 0.8);
     };
     return {
       showOverview: () => {
-        travelRef.current?.replaceChildren();
-        return camTo(0, 0, 1, 0.9);
+        camSeq.current += 1;
+        dropDots();
+        return camTo(0, 0, 1, 0.7);
       },
       focusNode,
       followConnection: async (a, b, { showDot = true } = {}) => {
         const A = nodePos(a);
         const B = nodePos(b);
         if (!A || !B) return focusNode(b);
-        travelRef.current?.replaceChildren();
+        const mine = ++camSeq.current;
+        dropDots();
         let dot = null;
         if (showDot && travelRef.current) {
-          dot = el("circle", { r: 8, cx: A.x, cy: A.y, fill: "#4f9eff", filter: "url(#packetGlow)" });
+          dot = el("circle", { r: 8, cx: A.x, cy: A.y, fill: "#4f9eff", filter: "url(#packetGlow)", "data-cam-dot": "1" });
           travelRef.current.appendChild(dot);
-          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : 1.7, ease: "power1.inOut" });
+          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : scaled(1.2), ease: "power1.inOut" });
         }
         const mv = viewFor({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, 1.2);
-        await camTo(mv.x, mv.y, 1.2, 0.8, "power1.in");
+        await camTo(mv.x, mv.y, 1.2, 0.5, "power1.in");
+        if (camSeq.current !== mine) return; // a newer camera command took over
         const bv = viewFor(B, 1.7);
-        await camTo(bv.x, bv.y, 1.7, 0.9, "power2.out");
+        await camTo(bv.x, bv.y, 1.7, 0.6, "power2.out");
         if (dot) gsap.to(dot, { opacity: 0, duration: 0.3, onComplete: () => dot.remove() });
       },
       // Pulses a node (the "this is what we are talking about" highlight).
@@ -230,8 +251,8 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           gsap
             .timeline({ onComplete: res })
             .set(node, { attr: { filter: "url(#pulseGlow)" } })
-            .to(node, { scale: 1.3, ...o, duration: reduced() ? 0 : 0.4, ease: "power2.out" })
-            .to(node, { scale: 1, ...o, duration: reduced() ? 0 : 0.4, ease: "power2.in" })
+            .to(node, { scale: 1.3, ...o, duration: reduced() ? 0 : scaled(0.3), ease: "power2.out" })
+            .to(node, { scale: 1, ...o, duration: reduced() ? 0 : scaled(0.3), ease: "power2.in" })
             .set(node, { attr: { filter: "" } });
         }),
       // A labelled value leaves the source, travels along a growing arrow and
@@ -242,7 +263,7 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           const B = nodePos(b);
           const layer = travelRef.current;
           if (!A || !B || !layer) return res();
-          const dur = reduced() ? 0 : 1.8;
+          const dur = reduced() ? 0 : scaled(1.2);
           const line = el("line", { x1: A.x, y1: A.y, x2: A.x, y2: A.y, stroke: color, "stroke-width": 3, opacity: 0.9 });
           const tok = el("g");
           tok.appendChild(el("circle", { r: 11, fill: color, filter: "url(#packetGlow)" }));
@@ -262,25 +283,67 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           layer.appendChild(head);
           gsap.set(head, { x: hx, y: hy, rotation: ang, svgOrigin: `${hx} ${hy}` });
           gsap.set(tok, { x: A.x, y: A.y, scale: 0 });
+          const cleanup = () => {
+            // the arrow stays briefly after arrival, then is removed (no leaks)
+            setTimeout(() => [line, tok, head].forEach((n) => n.remove()), 1500);
+            trace("transfer_done");
+            res();
+          };
           gsap
-            .timeline({ onComplete: res })
-            .to(tok, { scale: 1, duration: reduced() ? 0 : 0.35, ease: "back.out(2)" })
+            .timeline({ onComplete: cleanup })
+            .to(tok, { scale: 1, duration: reduced() ? 0 : 0.25, ease: "back.out(2)" })
             .to(tok, { x: B.x, y: B.y, duration: dur, ease: "power1.inOut" }, ">")
             .to(line, { attr: { x2: B.x, y2: B.y }, duration: dur, ease: "power1.inOut" }, "<")
             .to(head, { opacity: 1, duration: 0.2 }, "-=0.3")
-            .to(tok, { scale: 0.2, opacity: 0, duration: reduced() ? 0 : 0.3, ease: "power2.in" });
+            .to(tok, { scale: 0.2, opacity: 0, duration: reduced() ? 0 : 0.25, ease: "power2.in" });
         }),
       setPaused: (p) => (p ? gsap.globalTimeline.pause() : gsap.globalTimeline.resume()),
-      getView: () => ({ ...cam.current })
+      getView: () => ({ ...cam.current }),
+      // Progress report used by the stall watchdog.
+      getHealth: () => {
+        const tl = tlRef.current;
+        return {
+          has: !!tl,
+          time: tl ? tl.time() : -1,
+          progress: tl ? tl.progress() : 1,
+          tlPaused: tl ? tl.paused() : false,
+          globalPaused: gsap.globalTimeline.paused()
+        };
+      },
+      // Safe recovery from a stalled timeline: keeps the last committed state,
+      // commits the remaining state changes in order (never twice), and frees
+      // anything waiting on the animation. The voice session is untouched.
+      recover: () => {
+        trace("anim_recover");
+        commitPending();
+        tlRef.current?.kill();
+        tlRef.current = null;
+        camPending.current?.();
+        camPending.current = null;
+        cbRef.current.onAnimatingChange?.(false);
+        gsap.globalTimeline.resume();
+      }
     };
   });
+
+  // State changes (update_object) of the running timeline that have not fired
+  // yet. If the timeline is replaced or recovered, they are committed in order
+  // exactly once, so the diagram's contents never end up wrong.
+  const pendingRef = useRef([]);
+  const commitPending = () => {
+    const list = pendingRef.current;
+    pendingRef.current = [];
+    list.forEach((r) => r.fire());
+    if (list.length) trace("state_committed_early", { n: list.length });
+  };
 
   // Freeze or continue the running animation (professor paused / interrupted).
   useEffect(() => {
     tlRef.current?.paused(!!paused);
   }, [paused]);
 
-  // Rebuild the GSAP timeline whenever playback is requested.
+  // Rebuild the GSAP timeline only when playback is requested (playToken).
+  // Images, transcripts and scene updates do not touch it.
   useEffect(() => {
     const layer = animRef.current;
     if (!layer) return undefined;
@@ -289,22 +352,47 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
       tlRef.current = null;
     }
     while (layer.firstChild) layer.removeChild(layer.firstChild);
+    pendingRef.current = [];
     if (!scene || !Array.isArray(scene.sequence) || scene.sequence.length === 0) return undefined;
     const steps = scene.sequence;
     const from = Math.max(0, Math.min(startStep, steps.length - 1));
     const played = playMode === "single" ? [steps[from]] : steps.slice(from);
     const tl = gsap.timeline({
-      onStart: () => cbRef.current.onAnimatingChange?.(true),
-      onComplete: () => cbRef.current.onAnimatingChange?.(false)
+      onStart: () => {
+        trace("anim_start", { token: playToken });
+        cbRef.current.onAnimatingChange?.(true);
+      },
+      onComplete: () => {
+        trace("anim_complete", { token: playToken });
+        cbRef.current.onAnimatingChange?.(false);
+      }
     });
     tlRef.current = tl;
     if (cbRef.current.paused) tl.paused(true);
+    const reg = (id, props) => {
+      const r = {
+        done: false,
+        fire() {
+          if (r.done) return;
+          r.done = true;
+          trace("state_committed", { id });
+          cbRef.current.onUpdateObject?.(id, props);
+        }
+      };
+      pendingRef.current.push(r);
+      return r;
+    };
     for (const step of played) {
       tl.call(() => cbRef.current.onStepComplete?.(step.step - 1), [], tl.duration());
-      addStepToTimeline(tl, step, layer, scene, (id, props) => cbRef.current.onUpdateObject?.(id, props));
+      addStepToTimeline(tl, step, layer, scene, (id, props) => cbRef.current.onUpdateObject?.(id, props), reg);
     }
     return () => {
+      const unfinished = tl.progress() < 1;
       tl.kill();
+      commitPending();
+      // A killed timeline never fires onComplete: clear the flag so nothing
+      // keeps waiting for an animation that no longer exists.
+      if (unfinished) cbRef.current.onAnimatingChange?.(false);
     };
   }, [playToken]);
 

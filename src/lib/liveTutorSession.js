@@ -96,7 +96,25 @@ export const DIRECTOR_TOOLS = [
   ),
   tool("play_step", "Play one numbered teaching step of the diagram (starting at 1). The camera follows it. The result arrives when it has finished.", { step_id: { type: "number", description: "Step number, starting at 1" } }, ["step_id"]),
   tool("pause_visuals", "Freeze the animation exactly where it is."),
-  tool("resume_visuals", "Continue the animation from where it was frozen.")
+  tool("resume_visuals", "Continue the animation from where it was frozen."),
+  tool(
+    "ds_start",
+    "Put a real data-structure diagram on screen (queue or stack). Use it when the student asks about a queue or stack, or asks to switch to the other one.",
+    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "number" }, description: "Optional starting values; default 10, 20, 30" } },
+    ["kind"]
+  ),
+  tool(
+    "ds_operation",
+    "Run a real operation on the data structure on screen. The app computes the true result, animates the value and returns the real before/after state. enqueue/push need a value.",
+    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "number", description: "Value for enqueue or push" } },
+    ["op"]
+  ),
+  tool(
+    "ds_replay",
+    "Visually replay an earlier operation (the last one by default) without changing the data. Use it when the student asks why something happened.",
+    { which: { type: "number", description: "Operation number to replay; omit for the last one" } }
+  ),
+  tool("ds_state", "Get the real current contents and recent operations of the data structure on screen. Call it before answering any question about its contents.")
 ];
 
 // Added to the tutor instructions: the professor directs the camera.
@@ -106,7 +124,15 @@ DIRECTING THE ANIMATED DIAGRAM (when show_segment(0) lists the diagram's parts, 
 - Start: call show_segment(0). It shows the whole diagram, zooms the camera into the first part and lists part ids and numbered steps. Give the one short metaphor it provides (first part only), then explain that part.
 - Then move through the lesson with play_step(1), play_step(2), and so on. Use animate_transfer to send a value along an arrow, update_node_state right after it arrives to show what changed in the destination (and in the source if it changes), follow_connection or focus_node to move attention, show_overview to step back, highlight_node to point at something.
 - Every tool result tells you the visual has FINISHED. Then explain why the state changed. Only use part ids from the list. Never describe something that has not appeared yet.
-- If the student interrupts, answer them directly and calmly. The picture stays exactly as it is. Continue from the current state; never restart or repeat earlier steps. Call resume_visuals only if you paused the visuals yourself.`;
+- If the student interrupts, answer them directly and calmly. The picture stays exactly as it is. Continue from the current state; never restart or repeat earlier steps. Call resume_visuals only if you paused the visuals yourself.
+- Pace: the visuals keep up with you. Start a visual command in the same breath as the sentence about it; never describe three parts ahead of the picture. Each tool result says the visual has finished.
+
+DATA STRUCTURES (queue, stack): you CHOOSE and EXPLAIN operations; the app EXECUTES them. Never invent a result.
+- When the student asks about a queue or a stack, the diagram is a real data structure. Demonstrate with ds_operation (queue: enqueue, dequeue, peek; stack: push, pop, peek), for example enqueue 40 then dequeue. Say what you will do, call it, then explain from the tool result only: which element moved, the before and after contents, and why (FIFO removes the oldest at the front; LIFO removes the newest at the top). Never animate a stack like a queue.
+- Also explain what happens when it is empty (dequeue/pop on empty changes nothing) and, briefly, time complexity: O(1) for a linked list or circular buffer, but depends on the implementation (a naive array that shifts on dequeue is O(n)).
+- Questions like "why did 10 leave instead of 40?": call ds_state first, answer with the real contents and the FIFO rule, then call ds_replay so the student sees that exact removal again. Replay never changes the data.
+- "What about a stack?": call ds_start with kind stack, contrast LIFO with FIFO, then run push and pop and point out that the newest value leaves first.
+- Never state contents that the latest tool result does not show. If unsure, call ds_state.`;
 
 export function preferenceLines(profile) {
   const lines = [];

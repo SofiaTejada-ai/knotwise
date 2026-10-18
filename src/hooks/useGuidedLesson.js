@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { base44 } from "@/api/base44Client";
+import { trace } from "@/lib/lessonTrace";
 
 // Which node a teaching step is about. A packet step arrives at its `to`;
 // the very first step starts at its source.
@@ -102,6 +103,7 @@ export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, quest
       const obj = (sc?.objects ?? []).find((o) => o.id === nodeId);
       if (!obj) return;
       inflight.current.add(key);
+      trace("image_start", { nodeId });
       emit("IMAGE_REQUESTED", { nodeId });
       const step = (sc.sequence ?? []).find((s) => s.target === nodeId || s.to === nodeId);
       const p = base44.functions
@@ -118,6 +120,7 @@ export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, quest
       if (first) introRef.current = { lid, p };
       p.then((d) => {
         inflight.current.delete(key);
+        trace("image_done", { nodeId, ok: !!d?.url });
         if (lessonIdRef.current !== lid) return; // stale lesson: discard
         cache.current.set(key, d?.url || null);
         if (d?.url) emit("NODE_IMAGE_READY", { nodeId, url: d.url });

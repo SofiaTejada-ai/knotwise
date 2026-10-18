@@ -38,6 +38,7 @@ import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
 import { useAutoCamera } from "@/hooks/useAutoCamera";
+import { detectKind, buildDsScene } from "@/lib/dsEngine";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
 
@@ -132,12 +133,14 @@ export default function LiveTutor() {
       tick();
     });
   const directorRef = useRef(null);
+  const loadDsSceneRef = useRef(null);
   if (!directorRef.current) {
     directorRef.current = createDirector({
       scene: () => tutorRef.current.getScene(),
       canvas: () => canvasRef.current,
       guided: () => guidedRef.current,
       tutor: () => tutorRef.current,
+      loadScene: (sc) => loadDsSceneRef.current(sc),
       setSeg: (i) => {
         setSegIndex(i);
         setSceneMode("present");
@@ -150,7 +153,9 @@ export default function LiveTutor() {
     scene: tutor.scene,
     active: phase === "teaching" && sceneMode === "present",
     director: directorRef.current,
-    firstNodeId: guided.nodeSeq.find(Boolean) ?? tutor.scene?.objects?.[0]?.id,
+    canvasRef,
+    isAnimating: tutor.isAnimating,
+    firstNodeId: tutor.scene?.ds?.structId ?? guided.nodeSeq.find(Boolean) ?? tutor.scene?.objects?.[0]?.id,
     paused: voice.status === "listening" && !!voice.userTranscript
   });
 
@@ -184,6 +189,9 @@ export default function LiveTutor() {
   // technical diagram. Never blocks the professor.
   const fetchSegments = async (node, question) => {
     const topicText = `${node.label} ${node.description ?? ""} ${question ?? ""}`;
+    // Queues and stacks use the deterministic engine, not a generated scene.
+    const dsKind = detectKind(node.id === "opening" ? question : `${node.label} ${question ?? ""}`);
+    if (dsKind) return sceneToSegments(buildDsScene(dsKind));
     // Preferred: a complete animated scene. If it cannot be built, fall back
     // to the simple technical diagram below.
     try {
@@ -209,6 +217,13 @@ export default function LiveTutor() {
     setPresentation(segs);
     tutorRef.current.loadScene(segs?.scene ?? null);
     orch.setVisual(segs?.scene ? "animated_scene" : segs?.visual?.source ?? "none", { source: segs?.visual?.source, steps: segs?.length ?? 0 });
+  };
+  // The professor switched to a new data-structure diagram mid-lesson.
+  loadDsSceneRef.current = (sc) => {
+    const segs = sceneToSegments(sc);
+    applyPresentation(segs);
+    setSegIndex(0);
+    setSceneMode("present");
   };
 
   // Starts (or reuses) the diagram request for a topic. When it lands and that
@@ -425,7 +440,7 @@ export default function LiveTutor() {
   const handleToolCall = async ({ name, arguments: args, call_id }) => {
     if (DIRECTOR_TOOL_NAMES.includes(name)) {
       // Professor's visual commands: validated and queued by the director.
-      if (!tutorRef.current.getScene()) {
+      if (!tutorRef.current.getScene() && name !== "ds_start") {
         voice.sendFunctionCallOutput(call_id, "The diagram is not on screen yet. Keep explaining in your own words.");
         return;
       }
@@ -484,7 +499,7 @@ export default function LiveTutor() {
         // Start: the whole diagram first, then the camera goes to the first part.
         await dir.run("show_overview");
         await new Promise((r) => setTimeout(r, 1500));
-        const firstId = guidedRef.current.nodeSeq.find(Boolean) ?? segs.scene.objects?.[0]?.id;
+        const firstId = segs.scene.ds?.structId ?? guidedRef.current.nodeSeq.find(Boolean) ?? segs.scene.objects?.[0]?.id;
         await dir.run("focus_node", { node_id: firstId });
         const meta = await guidedRef.current.getIntro(2500);
         const parts = (segs.scene.objects ?? [])
@@ -494,7 +509,7 @@ export default function LiveTutor() {
         const steps = (segs.scene.sequence ?? []).map((s, k) => `${k + 1}) ${s.description || s.action}`).join(" ");
         voice.sendFunctionCallOutput(
           call_id,
-          `The whole diagram was shown and the camera is now on "${(segs.scene.objects ?? []).find((o) => o.id === firstId)?.label || firstId}" with a simple picture above it. Diagram parts (id and label): ${parts}. Numbered steps: ${steps} ${
+          `The whole diagram was shown and the camera is now on "${(segs.scene.objects ?? []).find((o) => o.id === firstId)?.label || firstId}" with a simple picture above it. Diagram parts (id and label): ${parts}. ${dir.dsIntro()} Numbered steps: ${steps} ${
             meta ? `First give this one short everyday metaphor in your own words: "${meta}". ` : ""
           }Then explain that first part in two short accurate sentences, then call play_step(1) and keep directing as your rules say.`
         );
