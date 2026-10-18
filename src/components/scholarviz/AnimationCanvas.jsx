@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import gsap from "gsap";
 import { SceneObject, labelOffset, wrapLines, MONO } from "./SceneObjects";
 
@@ -147,7 +147,7 @@ function addStepToTimeline(tl, step, layer, scene, onUpdateObject) {
   }
 }
 
-export default function AnimationCanvas({
+const AnimationCanvas = forwardRef(function AnimationCanvas({
   scene,
   startStep,
   playToken,
@@ -156,8 +156,9 @@ export default function AnimationCanvas({
   onAnimatingChange,
   onMoveNode,
   onUpdateObject,
+  onSelectNode,
   paused = false
-}) {
+}, ref) {
   const svgRef = useRef(null);
   const animRef = useRef(null);
   const objectsRef = useRef(null);
@@ -166,7 +167,62 @@ export default function AnimationCanvas({
   const prevSceneId = useRef(null);
 
   const cbRef = useRef({});
-  cbRef.current = { onStepComplete, onAnimatingChange, onMoveNode, onUpdateObject, paused };
+  cbRef.current = { onStepComplete, onAnimatingChange, onMoveNode, onUpdateObject, onSelectNode, paused };
+
+  // ---- Camera: moves a viewport group; node coordinates are never changed. ----
+  const camRef = useRef(null);
+  const travelRef = useRef(null);
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  const cam = useRef({ x: 0, y: 0, scale: 1 });
+  const applyCam = () =>
+    camRef.current?.setAttribute("transform", `translate(${cam.current.x} ${cam.current.y}) scale(${cam.current.scale})`);
+  const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const camTo = (x, y, scale, dur, ease = "power2.inOut") =>
+    new Promise((res) => {
+      gsap.to(cam.current, {
+        x, y, scale, duration: reduced() ? 0 : dur, ease, overwrite: true,
+        onUpdate: applyCam,
+        onComplete: () => { applyCam(); res(); }
+      });
+    });
+  const nodePos = (id) => (sceneRef.current?.objects ?? []).find((o) => o.id === id);
+  // Keeps the focused node low on screen so a picture fits above it.
+  const viewFor = (p, z) => ({ x: 450 - p.x * z, y: 370 - p.y * z });
+
+  useImperativeHandle(ref, () => {
+    const focusNode = (id, z = 1.7) => {
+      const p = nodePos(id);
+      if (!p) return Promise.resolve();
+      const v = viewFor(p, z);
+      return camTo(v.x, v.y, z, 1.1);
+    };
+    return {
+      showOverview: () => {
+        travelRef.current?.replaceChildren();
+        return camTo(0, 0, 1, 0.9);
+      },
+      focusNode,
+      followConnection: async (a, b, { showDot = true } = {}) => {
+        const A = nodePos(a);
+        const B = nodePos(b);
+        if (!A || !B) return focusNode(b);
+        travelRef.current?.replaceChildren();
+        let dot = null;
+        if (showDot && travelRef.current) {
+          dot = el("circle", { r: 8, cx: A.x, cy: A.y, fill: "#4f9eff", filter: "url(#packetGlow)" });
+          travelRef.current.appendChild(dot);
+          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : 1.7, ease: "power1.inOut" });
+        }
+        const mv = viewFor({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, 1.2);
+        await camTo(mv.x, mv.y, 1.2, 0.8, "power1.in");
+        const bv = viewFor(B, 1.7);
+        await camTo(bv.x, bv.y, 1.7, 0.9, "power2.out");
+        if (dot) gsap.to(dot, { opacity: 0, duration: 0.3, onComplete: () => dot.remove() });
+      },
+      getView: () => ({ ...cam.current })
+    };
+  });
 
   // Freeze or continue the running animation (professor paused / interrupted).
   useEffect(() => {
@@ -235,6 +291,7 @@ export default function AnimationCanvas({
     document.removeEventListener("pointerup", endDrag);
     document.removeEventListener("pointercancel", endDrag);
     if (d.moved && d.x != null) cbRef.current.onMoveNode?.(d.id, d.x, d.y);
+    else cbRef.current.onSelectNode?.(d.id);
   };
 
   const beginDrag = (e, obj) => {
@@ -247,7 +304,7 @@ export default function AnimationCanvas({
       sy: obj.y,
       cx: e.clientX,
       cy: e.clientY,
-      scale: 900 / rect.width,
+      scale: 900 / rect.width / cam.current.scale,
       moved: false,
       el: e.currentTarget.closest("g[data-node]")
     };
@@ -301,6 +358,7 @@ export default function AnimationCanvas({
       <rect x="0" y="0" width="900" height="550" fill="#f8fafc" />
       <rect x="0" y="0" width="900" height="550" fill="url(#grid50)" />
 
+      <g ref={camRef}>
       <g ref={objectsRef}>
         {(scene?.objects ?? []).map((obj) => {
           const off = labelOffset(obj);
@@ -325,6 +383,8 @@ export default function AnimationCanvas({
       </g>
 
       <g ref={animRef} />
+      <g ref={travelRef} />
+      </g>
 
       <rect x="0" y="0" width="900" height="550" fill="url(#vignette)" pointerEvents="none" />
 
@@ -335,4 +395,6 @@ export default function AnimationCanvas({
       )}
     </svg>
   );
-}
+});
+
+export default AnimationCanvas;

@@ -12,6 +12,9 @@ import { useAnimationTutor } from "@/hooks/useAnimationTutor";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import { useSpokenLesson } from "@/hooks/useSpokenLesson";
 import ProfessorControls from "@/components/scholarviz/ProfessorControls";
+import NodeImagePanel from "@/components/scholarviz/NodeImagePanel";
+import CameraControls from "@/components/scholarviz/CameraControls";
+import { useGuidedLesson } from "@/hooks/useGuidedLesson";
 
 const SUGGESTIONS = [
   "How does a scam text reach my phone?",
@@ -53,6 +56,26 @@ export default function ScholarViz() {
     goToStep: tutor.goToStep,
     isAnimating: tutor.isAnimating
   });
+  const canvasRef = useRef(null);
+  const guided = useGuidedLesson({
+    canvasRef,
+    scene: tutor.scene,
+    lessonStatus: lesson.status,
+    stepIdx: lesson.stepIdx,
+    question: tutor.messages.find((m) => m.role === "user")?.text
+  });
+
+  // Zoom into the first node, give one short orienting metaphor, then teach.
+  const startGuided = async () => {
+    await guided.focusFirst();
+    const intro = await guided.getIntro();
+    if (intro) {
+      const finished = await lesson.say(intro);
+      if (!finished) return;
+    }
+    lesson.run(0);
+  };
+  const guidedLesson = { ...lesson, run: (i = 0) => (i === 0 ? startGuided() : lesson.run(i)) };
   const [voiceOn, setVoiceOn] = useState(true);
   const interactions = useRef({});
   const questionRef = useRef(null);
@@ -180,6 +203,8 @@ export default function ScholarViz() {
         <div className="flex min-h-[440px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white lg:w-[65%]">
           <div className="relative min-h-[360px] flex-1">
             <AnimationCanvas
+              ref={canvasRef}
+              onSelectNode={guided.selectNode}
               scene={tutor.scene}
               startStep={tutor.startStep}
               playToken={tutor.playToken}
@@ -202,6 +227,14 @@ export default function ScholarViz() {
                 <span className="text-slate-400">No scene yet. Ask a question.</span>
               )}
             </div>
+            <NodeImagePanel url={guided.imageUrl} label={guided.focusedLabel} />
+            {tutor.scene && (
+              <CameraControls
+                guided={guided.state.guidedModeEnabled}
+                onZoomOut={guided.zoomOut}
+                onToggleGuided={() => guided.setGuided(!guided.state.guidedModeEnabled)}
+              />
+            )}
             {tutor.isLoading && (
               <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow">
                 generating…
@@ -215,10 +248,10 @@ export default function ScholarViz() {
           </div>
           <div className="border-t border-slate-200 p-3">
             <ProfessorControls
-              lesson={lesson}
+              lesson={guidedLesson}
               hasScene={!!tutor.scene}
               busy={tutor.isLoading}
-              onReplay={() => lesson.run(0)}
+              onReplay={startGuided}
               onSpoken={(text) => ask(text, { spoken: true })}
               onAsk={() => {
                 lesson.pause();
