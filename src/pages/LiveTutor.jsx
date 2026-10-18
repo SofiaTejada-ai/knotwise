@@ -149,6 +149,8 @@ export default function LiveTutor() {
     });
   }
 
+  window.__dbgDirector = directorRef.current; // TEMP-DEBUG
+
   useAutoCamera({
     scene: tutor.scene,
     active: phase === "teaching" && sceneMode === "present",
@@ -162,8 +164,18 @@ export default function LiveTutor() {
   // A student interruption freezes visuals and drops queued commands, keeping
   // the last committed state.
   useEffect(() => {
-    if (phase === "teaching" && voice.userTranscript) directorRef.current.interrupt();
+    if (phase === "teaching" && voice.userTranscript) {
+      directorRef.current.noteStudent(voice.userTranscript);
+      directorRef.current.interrupt();
+    }
   }, [voice.userTranscript]);
+
+  // Remember what the professor explained (once a reply settles).
+  useEffect(() => {
+    if (phase !== "teaching" || !voice.tutorText) return undefined;
+    const t = setTimeout(() => directorRef.current.noteProfessor(voice.tutorText), 1500);
+    return () => clearTimeout(t);
+  }, [voice.tutorText]);
 
   const buildMap = async (question) => {
     const p = profileRef.current;

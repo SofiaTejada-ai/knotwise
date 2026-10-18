@@ -114,7 +114,41 @@ export const DIRECTOR_TOOLS = [
     "Visually replay an earlier operation (the last one by default) without changing the data. Use it when the student asks why something happened.",
     { which: { type: "number", description: "Operation number to replay; omit for the last one" } }
   ),
-  tool("ds_state", "Get the real current contents and recent operations of the data structure on screen. Call it before answering any question about its contents.")
+  tool("ds_state", "Get the real current contents and recent operations of the data structure on screen. Call it before answering any question about its contents."),
+
+  // Conversational navigation: all of these only DISPLAY the past; none runs an operation again.
+  tool("get_teaching_history", "List what has been taught so far (with replayable ids), the camera path, recent student questions and the saved teaching position. Call it when you are unsure what the student refers to."),
+  tool(
+    "revisit_node",
+    "Take the camera back to a part already taught, restore its picture and replay its earlier animation. Use when the student asks to go back to something (for example 'go back to the attacker').",
+    { node_id: idParam("Part id"), replay: { type: "boolean", description: "Replay its earlier animation (default true); false to only focus" } },
+    ["node_id"]
+  ),
+  tool(
+    "replay_step",
+    "Replay one earlier teaching step visually (a step number such as 2, or an id from the history such as step_2). Does not advance the lesson.",
+    { step_id: idParam("Step number or history id") },
+    ["step_id"]
+  ),
+  tool(
+    "replay_example",
+    "Replay an earlier example from its RECORDED state (for example the last enqueue/dequeue), then restore the real state. Omit example_id for the most recent example. The data is never changed by a replay.",
+    { example_id: idParam("History id such as op_2; omit for the latest example") }
+  ),
+  tool("trace_previous_transition", "Zoom out to show how the focused part was reached and replay the value moving along the connecting arrow. Use for 'how did we get here?' and 'where did that come from?'."),
+  tool(
+    "explain_state_change",
+    "Replay how a part's contents changed, from the recorded before state to the after state, and get the exact change. Use for 'why did the value change?'.",
+    { node_id: idParam("Part id (optional)"), step_id: idParam("History id of the change (optional)") }
+  ),
+  tool(
+    "compare_states",
+    "Show an earlier recorded state, then a later one, and get the difference. Give the same id twice to compare one step's before and after.",
+    { before_step_id: idParam("History id of the earlier step"), after_step_id: idParam("History id of the later step") },
+    ["before_step_id", "after_step_id"]
+  ),
+  tool("return_to_previous_focus", "Move the camera back to where the lesson was before the review detour."),
+  tool("resume_original_teaching_path", "End the review and continue the original lesson: restores the real state, moves the camera to the right next part, and tells you the next step. Completed operations never run again.")
 ];
 
 // Added to the tutor instructions: the professor directs the camera.
@@ -132,7 +166,14 @@ DATA STRUCTURES (queue, stack): you CHOOSE and EXPLAIN operations; the app EXECU
 - Also explain what happens when it is empty (dequeue/pop on empty changes nothing) and, briefly, time complexity: O(1) for a linked list or circular buffer, but depends on the implementation (a naive array that shifts on dequeue is O(n)).
 - Questions like "why did 10 leave instead of 40?": call ds_state first, answer with the real contents and the FIFO rule, then call ds_replay so the student sees that exact removal again. Replay never changes the data.
 - "What about a stack?": call ds_start with kind stack, contrast LIFO with FIFO, then run push and pop and point out that the newest value leaves first.
-- Never state contents that the latest tool result does not show. If unsure, call ds_state.`;
+- Never state contents that the latest tool result does not show. If unsure, call ds_state.
+
+GOING BACK AND REVISITING (the student speaks naturally and never names parts, steps or buttons; YOU decide where to point):
+- Interpret what the student means in context, then choose the command. If unsure what they refer to, call get_teaching_history. Say one short sentence ("Sure, let's go back to the attacker"), then call the command.
+- "Go back to X" / "explain that part again" -> revisit_node with the part that matches. "Show me the last example" / "show me again" -> replay_example (queue or stack: why did 10 leave? call ds_state, then replay_example). "How did we get here?" / "where did that come from?" / "how do we get from here to there?" -> trace_previous_transition (it zooms out, then follows the arrow). "Why did the value change?" -> explain_state_change. "Show me the difference" -> compare_states. "What happened before this?" -> replay_step on the step before, or trace_previous_transition.
+- A conceptual question needs no camera move: answer while staying on the current part.
+- Replays only show the past. NEVER call ds_operation to show something again, because that would change the real data a second time. Use replay_example.
+- After the replay, explain what the student watched using the tool result only. Then decide: stay, return_to_previous_focus, or ask if they are ready. When they say things like "okay, I understand, continue", call resume_original_teaching_path and follow its next step (usually play_step). Never restart the lesson or repeat completed steps or operations.`;
 
 export function preferenceLines(profile) {
   const lines = [];

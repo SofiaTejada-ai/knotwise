@@ -1,6 +1,8 @@
 import { nodeForStep } from "@/hooks/useGuidedLesson";
 import { timing } from "@/lib/animTiming";
 import { trace } from "@/lib/lessonTrace";
+import { createHistory } from "@/lib/teachingHistory";
+import { createRevisit, REVISIT_TOOL_NAMES } from "@/lib/revisitCommands";
 import {
   KINDS,
   RULES,
@@ -40,7 +42,8 @@ export const DIRECTOR_TOOL_NAMES = [
   "ds_start",
   "ds_operation",
   "ds_replay",
-  "ds_state"
+  "ds_state",
+  ...REVISIT_TOOL_NAMES
 ];
 
 const STATE_KEYS = ["items", "value", "label", "color", "text"];
@@ -131,6 +134,21 @@ export function createDirector(api) {
       : "";
     return `${head}${explainResult(rec)} ${detail}The diagram now shows exactly this. Current state: ${summarize(d.struct)} ${RULES[d.meta.kind]} Explain which element was affected and why, using only these real values. Mention complexity only briefly if it helps: ${COMPLEXITY[d.meta.kind]}`;
   };
+
+  // Teaching history + semantic navigation (revisit, replay, retrace, resume).
+  const hist = createHistory();
+  const rv = createRevisit({
+    api,
+    hist,
+    getDs,
+    playOpVisual,
+    reconcile,
+    opMessage,
+    find,
+    labelOf,
+    needNode,
+    seqIndex
+  });
 
   const commands = {
     async focus_node({ node_id }) {
@@ -268,6 +286,8 @@ export function createDirector(api) {
     }
   };
 
+  Object.assign(commands, rv.commands);
+
   const run = (name, args = {}) => {
     const fn = commands[name];
     if (!fn) return Promise.resolve(`Unknown visual command ${name}.`);
@@ -288,6 +308,7 @@ export function createDirector(api) {
         history.push({ name, args, at: Date.now(), scene: api.scene()?.scene_id });
         trace("cmd_started", { name });
         const t0 = performance.now();
+        const before = rv.snapshot();
         let timer;
         const out = await Promise.race([
           fn(args).then((r) => ({ r })),
@@ -299,13 +320,16 @@ export function createDirector(api) {
           // Recover the stalled animation without touching the voice session.
           trace("cmd_timeout", { name });
           api.canvas()?.recover();
+          rv.state.restore?.();
           reconcile();
           return "The visual took too long and was finished safely. The diagram shows the current real state. Keep explaining.";
         }
         trace("cmd_completed", { name, ms: Math.round(performance.now() - t0) });
+        if (!REVISIT_TOOL_NAMES.includes(name)) rv.track(name, args, before, out.r);
         return out.r;
       } catch (err) {
         trace("cmd_failed", { name });
+        rv.state.restore?.();
         reconcile();
         return "That visual could not run. Keep explaining in words.";
       } finally {
@@ -339,6 +363,10 @@ export function createDirector(api) {
     run,
     interrupt,
     history,
+    teaching: hist,
+    revisit: rv.state,
+    noteStudent: hist.noteStudent,
+    noteProfessor: hist.noteProfessor,
     isPaused: () => paused,
     pending: () => pending,
     dsIntro,
