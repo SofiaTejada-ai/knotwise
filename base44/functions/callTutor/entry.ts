@@ -217,7 +217,8 @@ export default async function(req) {
     if (!prompt.trim()) return Response.json({ error: "A question is required" }, { status: 400 });
     const currentScene = body.currentScene && typeof body.currentScene === "object" ? body.currentScene : null;
     const history = Array.isArray(body.history) ? body.history.slice(-8) : [];
-    const approved = Array.isArray(body.approvedSources) ? body.approvedSources.slice(0, 10) : [];
+    const groundingText = typeof body.groundingText === "string" ? body.groundingText.slice(0, 3000) : "";
+    const approved = groundingText ? [] : (Array.isArray(body.approvedSources) ? body.approvedSources.slice(0, 10) : []);
 
     const context = [];
     if (currentScene) context.push("CURRENT SCENE JSON:\n" + JSON.stringify(currentScene).slice(0, 6000));
@@ -234,9 +235,18 @@ export default async function(req) {
       );
     }
 
+    let system = SYSTEM_PROMPT;
+    if (groundingText) {
+      system = system.replace(
+        /^You are an animation tutor inside Safe Steps[^\n]*/,
+        "You are an animation tutor inside Knotwise. You turn one topic from the student's own uploaded document into an animated diagram. Use ONLY the DOCUMENT MATERIAL below. Never add outside facts. Objects and step descriptions must show how the ideas in the material relate or happen in order."
+      );
+      context.push("DOCUMENT MATERIAL:\n" + groundingText);
+    }
+
     const result = await base44.asServiceRole.integrations.Core.InvokeLLM({
       model: "claude_sonnet_4_6",
-      prompt: SYSTEM_PROMPT + (context.length ? "\n\n" + context.join("\n\n") : "") + "\n\nSTUDENT QUESTION: " + prompt,
+      prompt: system + (context.length ? "\n\n" + context.join("\n\n") : "") + "\n\nSTUDENT QUESTION: " + prompt,
       response_json_schema: RESPONSE_SCHEMA
     });
 

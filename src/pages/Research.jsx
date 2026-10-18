@@ -5,6 +5,9 @@ import UploadCard from "@/components/research/UploadCard";
 import ResearchHistory from "@/components/research/ResearchHistory";
 import MermaidDiagram from "@/components/research/MermaidDiagram";
 import NodeDetail from "@/components/research/NodeDetail";
+import SummaryBullets from "@/components/research/SummaryBullets";
+import StepByStep from "@/components/research/StepByStep";
+import ResearchQuiz from "@/components/research/ResearchQuiz";
 import ResearchPresentation from "@/components/research/ResearchPresentation";
 import { loadResearchSessions, saveResearchSession } from "@/lib/researchSessionStore";
 import {
@@ -317,6 +320,7 @@ export default function Research() {
 
         <NodeDetail
           node={selectedNode}
+          docTitle={map.title}
           voiceActive={isVoiceActive()}
           presenting={presenting}
           onPresent={presentNode}
@@ -324,6 +328,10 @@ export default function Research() {
           onAsk={askProfessor}
           onQuizResult={handleQuizResult}
         />
+
+        <SummaryBullets bullets={map.bullets} />
+        <StepByStep steps={map.steps} />
+        <ResearchQuiz map={map} />
       </div>
 
       {presenting && (

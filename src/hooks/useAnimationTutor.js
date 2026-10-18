@@ -53,7 +53,8 @@ export function useAnimationTutor() {
         prompt: q,
         currentScene: sceneRef.current,
         history: historyRef.current.slice(-8),
-        approvedSources: APPROVED_SOURCES
+        approvedSources: APPROVED_SOURCES,
+        groundingText: opts.groundingText
       });
       const data = res?.data ?? res;
       const sc = data?.scene;

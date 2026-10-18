@@ -4,12 +4,24 @@ import mermaid from "mermaid";
 let initialized = false;
 const ensureInit = () => {
   if (!initialized) {
-    mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "neutral" });
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "loose",
+      theme: "base",
+      themeVariables: { fontFamily: "JetBrains Mono, ui-monospace, monospace", fontSize: "14px" }
+    });
     initialized = true;
   }
 };
 
 const nodeIdOf = (el) => (/-flowchart-(n\d+)-\d+$/.exec(el?.id ?? "") || [])[1];
+
+// The chosen node glows; the others soften so the student sees where they are.
+function styleNode(el, selectedId) {
+  const picked = selectedId && nodeIdOf(el) === selectedId;
+  el.style.opacity = !selectedId || picked ? "1" : "0.55";
+  el.style.filter = picked ? "drop-shadow(0 0 8px rgba(79,70,229,0.7))" : "";
+}
 
 // The clickable lesson diagram. Mermaid draws the chart; tapping any node
 // opens its explanation below. The selected node stays bright while the
@@ -22,9 +34,7 @@ export default function MermaidDiagram({ chart, selectedId, onSelect }) {
   useEffect(() => {
     selectedRef.current = selectedId;
     if (!wrapRef.current) return;
-    wrapRef.current.querySelectorAll(".node").forEach((el) => {
-      el.style.opacity = !selectedId || nodeIdOf(el) === selectedId ? "1" : "0.5";
-    });
+    wrapRef.current.querySelectorAll(".node").forEach((el) => styleNode(el, selectedId));
   }, [selectedId]);
 
   useEffect(() => {
@@ -38,7 +48,8 @@ export default function MermaidDiagram({ chart, selectedId, onSelect }) {
         wrapRef.current.innerHTML = svg;
         wrapRef.current.querySelectorAll(".node").forEach((el) => {
           el.style.cursor = "pointer";
-          el.style.opacity = !selectedRef.current || nodeIdOf(el) === selectedRef.current ? "1" : "0.5";
+          el.style.transition = "opacity 0.2s, filter 0.2s";
+          styleNode(el, selectedRef.current);
         });
       } catch (err) {
         if (!cancelled) setFailed(true);
@@ -57,7 +68,11 @@ export default function MermaidDiagram({ chart, selectedId, onSelect }) {
   };
 
   return (
-    <div onClick={handleClick} className="overflow-x-auto" data-testid="research-diagram">
+    <div
+      onClick={handleClick}
+      className="overflow-x-auto [&_.node:hover]:!opacity-100 [&_.node:hover]:brightness-95"
+      data-testid="research-diagram"
+    >
       {failed ? (
         <p className="py-8 text-center text-sm text-red-500">
           The diagram could not be drawn. Try opening this lesson again.

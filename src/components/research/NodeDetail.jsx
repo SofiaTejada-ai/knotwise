@@ -3,12 +3,14 @@ import { Headphones, MicOff, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import NodeQuiz from "./NodeQuiz";
+import NodeAnimation from "./NodeAnimation";
 
 // The deeper view under the diagram for one topic: its explanation, the exact
 // document lines it comes from, the short quiz at the bottom, and the
 // optional professor (hear the topic out loud, then ask questions).
 export default function NodeDetail({
   node,
+  docTitle,
   voiceActive,
   presenting,
   onPresent,
@@ -45,6 +47,8 @@ export default function NodeDetail({
           From your document: {node.excerpt}
         </blockquote>
       )}
+
+      <NodeAnimation key={`anim-${node.id}`} node={node} docTitle={docTitle} />
 
       <NodeQuiz key={node.id} node={node} onResult={onQuizResult} />
 
