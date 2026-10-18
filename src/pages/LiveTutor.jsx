@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/lib/AuthContext";
 import { base44 } from "@/api/base44Client";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import ListeningOverlay from "@/components/safeSteps/ListeningOverlay";
@@ -95,10 +94,6 @@ export default function LiveTutor() {
 
   const voice = useRealtimeVoice();
   const navigate = useNavigate();
-  // The voice session and document tools run as the signed-in user. On the
-  // published app visitors start signed out, so send them to log in first
-  // (the preview is always signed in, which hid this).
-  const { isAuthenticated, navigateToLogin } = useAuth();
   const orch = useLessonOrchestrator();
 
   const topicKeyRef = useRef(null); // visual key of the topic on screen ("opening" until the outline arrives)
@@ -851,10 +846,6 @@ export default function LiveTutor() {
 
   // --- Session lifecycle ---
   const startSession = async (p, typedQuestion) => {
-    if (!isAuthenticated) {
-      navigateToLogin();
-      return;
-    }
     setProfile(p);
     profileRef.current = p;
     setMap(null);
@@ -1107,10 +1098,6 @@ export default function LiveTutor() {
   const documentBar = <DocumentBar doc={doc} onPick={loadDocument} onRemove={removeDocument} />;
   if (phase === "home") {
     const prepareSession = (p, typedQuestion) => {
-      if (!isAuthenticated) {
-        navigateToLogin();
-        return;
-      }
       setPending({ profile: p, typedQuestion });
       setPhase("ready");
     };

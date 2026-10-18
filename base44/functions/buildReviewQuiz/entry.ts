@@ -25,8 +25,8 @@ const QUIZ_SCHEMA = {
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    // Signed-out visitors may use the tutor (the app is public); a signed-in user is optional.
+    const user = await base44.auth.me().catch(() => null);
 
     const body = await req.json().catch(() => ({}));
     const sessions = Array.isArray(body.sessions)

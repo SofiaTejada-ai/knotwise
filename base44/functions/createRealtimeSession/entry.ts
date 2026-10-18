@@ -16,8 +16,8 @@ const UNAVAILABLE = 'I could not start the voice session right now. Please try a
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    // Signed-out visitors may use the tutor (the app is public); a signed-in user is optional.
+    const user = await base44.auth.me().catch(() => null);
 
     const apiKey = secrets.get('OPENAI_API_KEY');
     if (!apiKey) {
@@ -57,7 +57,9 @@ export default async function(req) {
 
     // Stable, privacy-preserving safety identifier for this app user.
     const digest = await crypto.subtle
-      .digest('SHA-256', new TextEncoder().encode('safe-steps:' + user.id))
+      .digest('SHA-256', new TextEncoder().encode(
+          'safe-steps:' + (user?.id ?? 'anon:' + (req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown'))
+        ))
       .catch(() => null);
     const safetyId = digest
       ? Array.from(new Uint8Array(digest))

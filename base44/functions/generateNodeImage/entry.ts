@@ -5,8 +5,8 @@ const clip = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(
 export default async function (req: Request) {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    // Signed-out visitors may use the tutor (the app is public); a signed-in user is optional.
+    const user = await base44.auth.me().catch(() => null);
 
     const body = await req.json().catch(() => ({}));
     const nodeLabel = clip(body.nodeLabel, 80);
