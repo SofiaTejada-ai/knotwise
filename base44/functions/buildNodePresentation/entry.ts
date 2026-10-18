@@ -30,7 +30,7 @@ export default async function(req) {
         nodeExample ? `A CONCRETE EXAMPLE TO BUILD ON: ${nodeExample}` : '',
         ageRange ? `THE STUDENT'S AGE OR GRADE RANGE: ${ageRange}` : '',
         '',
-        'Write 2 to 4 segments that build this topic step by step, in the order they should be taught. Each segment needs:',
+        'Write 2 to 3 segments that build this topic step by step, in the order they should be taught. Each segment needs:',
         '- idea: a very short name for this part of the topic (max 40 characters)',
         '- spokenText: exactly two or three short sentences the tutor will say for this part. Plain everyday words, warm and calm, no questions inside, max 320 characters.',
         '- imagePrompt: a description of ONE clear, concrete picture that shows exactly this part of the idea at this moment (for example: "a golden key being sealed inside a locked metal box as a padlock clicks shut").',
@@ -44,7 +44,7 @@ export default async function(req) {
 
     const segments = (Array.isArray(result?.segments) ? result.segments : [])
       .filter((s) => s && s.spokenText)
-      .slice(0, 4)
+      .slice(0, 3)
       .map((s) => ({
         idea: String(s.idea || nodeLabel).slice(0, 60),
         spokenText: String(s.spokenText).slice(0, 400),

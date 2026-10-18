@@ -24,9 +24,13 @@ export const SEGMENTS_SCHEMA = {
 export async function generateSegmentImages(integrations, segments) {
   const images = await Promise.allSettled(
     segments.map((s) =>
-      integrations.Core.GenerateImage({
-        prompt: `${s.imagePrompt}. Style: clean flat vector illustration, soft light colors, one clear central visual metaphor, generous white space, absolutely no text or letters in the image, nothing scary or alarming.`
-      })
+      Promise.race([
+        integrations.Core.GenerateImage({
+          prompt: `${s.imagePrompt}. Style: clean flat vector illustration, soft light colors, one clear central visual metaphor, generous white space, absolutely no text or letters in the image, nothing scary or alarming.`
+        }),
+        // A slow picture never holds up the lesson: that part simply has no picture.
+        new Promise((_, reject) => setTimeout(() => reject(new Error('image timeout')), 18000))
+      ])
     )
   );
   return segments.map((s, i) => ({
