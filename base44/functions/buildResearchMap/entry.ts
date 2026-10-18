@@ -56,6 +56,7 @@ const MAP_SCHEMA = {
           },
           explanation: { type: 'string', description: 'A deeper explanation of this topic in 4 to 8 short sentences, using only the material' },
           excerpt: { type: 'string', description: 'The exact key sentences from the material this topic is based on, max 900 characters' },
+          page: { type: 'number', description: 'The page number (from the nearest [[Page N]] marker before the excerpt) where the excerpt is found; 0 if the material has no page markers' },
           quiz: {
             type: 'object',
             properties: {
@@ -128,6 +129,7 @@ export default async function(req) {
         '- label: a very short name for the topic (max 24 characters)',
         '- explanation: a deeper explanation of the topic in 4 to 8 short sentences, grounded in the material only',
         '- excerpt: the exact key sentences from the material the topic is based on (max 900 characters, copied from the material)',
+        '- page: the page number from the nearest [[Page N]] marker above that excerpt (0 if there are no markers)',
         '- quiz: one short factual question with exactly 3 choices, answerable from the material alone',
         '- shape: the kind of idea it is (concept, process, decision, data, event or result), so the diagram shape matches its meaning. Use at least 3 different shapes when the material allows.',
         'Also write: bullets (5 to 7 short bullet points summarizing the whole material), steps (4 to 7 ordered step by step instructions or stages from the material), and finalQuiz (exactly 5 multiple choice questions with exactly 4 choices each, built from the topics, the bullet summary and the steps together, with basedOn saying which one each question uses).',
@@ -158,7 +160,9 @@ export default async function(req) {
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 1200),
+        page: Number.isInteger(Math.round(Number(n.page))) && Math.round(Number(n.page)) > 0 ? Math.round(Number(n.page)) : null,
         excerpt: String(n.excerpt ?? '')
+          .replace(/\[\[Page \d+\]\]/g, ' ')
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 900),

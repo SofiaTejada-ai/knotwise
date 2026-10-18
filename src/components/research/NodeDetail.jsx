@@ -44,7 +44,10 @@ export default function NodeDetail({
 
       {node.excerpt && (
         <blockquote className="rounded-xl border-l-4 border-slate-200 bg-slate-50 px-4 py-2 text-sm italic text-slate-500">
-          From your document: {node.excerpt}
+          <span className="mb-1 block text-xs font-semibold not-italic uppercase tracking-wide text-slate-500" data-testid="grounding-label">
+            From your material{node.page ? ` · page ${node.page}` : ""}
+          </span>
+          {node.excerpt}
         </blockquote>
       )}
 

@@ -8,7 +8,7 @@ const EXTRACT_SCHEMA = {
   type: 'object',
   properties: {
     title: { type: 'string', description: 'The document title, or a short name if the document has none' },
-    fullText: { type: 'string', description: 'The full readable text of the document, keeping headings and order' }
+    fullText: { type: 'string', description: 'The full readable text of the document, keeping headings and order. Start each page of the document with a marker like [[Page 1]], [[Page 2]], using the real page number' }
   },
   required: ['title', 'fullText']
 };

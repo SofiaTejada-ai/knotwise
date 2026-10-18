@@ -219,6 +219,7 @@ export default function ScholarViz() {
               hasScene={!!tutor.scene}
               busy={tutor.isLoading}
               onReplay={() => lesson.run(0)}
+              onSpoken={(text) => ask(text, { spoken: true })}
               onAsk={() => {
                 lesson.pause();
                 setTimeout(() => questionRef.current?.querySelector("input")?.focus(), 50);
