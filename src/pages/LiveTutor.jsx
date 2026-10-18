@@ -37,6 +37,7 @@ function sceneToSegments(scene) {
 import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
+import { useAutoCamera } from "@/hooks/useAutoCamera";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
 
@@ -144,6 +145,14 @@ export default function LiveTutor() {
       waitIdle
     });
   }
+
+  useAutoCamera({
+    scene: tutor.scene,
+    active: phase === "teaching" && sceneMode === "present",
+    director: directorRef.current,
+    firstNodeId: guided.nodeSeq.find(Boolean) ?? tutor.scene?.objects?.[0]?.id,
+    paused: voice.status === "listening" && !!voice.userTranscript
+  });
 
   // A student interruption freezes visuals and drops queued commands, keeping
   // the last committed state.
