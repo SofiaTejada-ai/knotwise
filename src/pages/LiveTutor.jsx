@@ -12,6 +12,7 @@ import {
   SHOW_SEGMENT_TOOL,
   CONFIRM_UNDERSTANDING_TOOL,
   MOVE_NODE_TOOL,
+  DIRECTOR_TOOLS,
   openQuestionInstructions,
   teachingInstructions,
   streamingInstructions,
@@ -35,7 +36,9 @@ function sceneToSegments(scene) {
 }
 import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
-const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL];
+import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
+
+const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
 
 // cyber8LiveTutor: the student asks a question, the tutor plans the lesson
 // length itself, then teaches topic by topic in one immersive scene. The
@@ -115,7 +118,8 @@ export default function LiveTutor() {
     scene: tutor.scene,
     lessonStatus: guidedStatus,
     stepIdx: segIndex ?? -1,
-    question: questionRef.current
+    question: questionRef.current,
+    auto: false // the professor directs the camera with explicit commands
   });
   const guidedRef = useRef(guided);
   guidedRef.current = guided;
@@ -126,6 +130,26 @@ export default function LiveTutor() {
       const tick = () => (!animRef.current || Date.now() - t0 > ms ? res() : setTimeout(tick, 150));
       tick();
     });
+  const directorRef = useRef(null);
+  if (!directorRef.current) {
+    directorRef.current = createDirector({
+      scene: () => tutorRef.current.getScene(),
+      canvas: () => canvasRef.current,
+      guided: () => guidedRef.current,
+      tutor: () => tutorRef.current,
+      setSeg: (i) => {
+        setSegIndex(i);
+        setSceneMode("present");
+      },
+      waitIdle
+    });
+  }
+
+  // A student interruption freezes visuals and drops queued commands, keeping
+  // the last committed state.
+  useEffect(() => {
+    if (phase === "teaching" && voice.userTranscript) directorRef.current.interrupt();
+  }, [voice.userTranscript]);
 
   const buildMap = async (question) => {
     const p = profileRef.current;
@@ -390,6 +414,15 @@ export default function LiveTutor() {
 
   // --- Realtime tool calls from the tutor ---
   const handleToolCall = async ({ name, arguments: args, call_id }) => {
+    if (DIRECTOR_TOOL_NAMES.includes(name)) {
+      // Professor's visual commands: validated and queued by the director.
+      if (!tutorRef.current.getScene()) {
+        voice.sendFunctionCallOutput(call_id, "The diagram is not on screen yet. Keep explaining in your own words.");
+        return;
+      }
+      voice.sendFunctionCallOutput(call_id, await directorRef.current.run(name, args ?? {}));
+      return;
+    }
     if (name === "start_topic") {
       if (orch.stateRef.current.lessonId) {
         voice.sendFunctionCallOutput(call_id, "The lesson is already on screen. Keep teaching.");
@@ -424,8 +457,6 @@ export default function LiveTutor() {
       }
       const i = Math.min(Math.max(Number(args?.segment_index) || 0, 0), Math.max(segs.length - 1, 0));
       const seg = segs[i];
-      // Let the previous step's animation finish before the next one starts.
-      if (segs.scene && i > 0) await waitIdle(7000);
       setSegIndex(i);
       setSceneMode("present");
       orch.setStep(i, { nodes: seg?.nodes ?? [], edges: seg?.edges ?? [] });
@@ -435,22 +466,28 @@ export default function LiveTutor() {
       }
       const last = i === segs.length - 1;
       if (segs.scene) {
-        tutorRef.current.goToStep(i);
-        let first = "";
-        if (i === 0) {
-          const parts = (segs.scene.objects ?? []).filter((o) => o.type !== "note").map((o) => o.label).join(", ");
-          const meta = await guidedRef.current.getIntro(2500);
-          first = `The whole diagram is on screen with these parts: ${parts}. ${
-            meta ? `Before the explanation, give this one short everyday metaphor in your own words: "${meta}". ` : ""
-          }`;
+        const dir = directorRef.current;
+        if (i > 0) {
+          // Later parts are played by the director, like play_step.
+          voice.sendFunctionCallOutput(call_id, await dir.run("play_step", { step_id: i + 1 }));
+          return;
         }
+        // Start: the whole diagram first, then the camera goes to the first part.
+        await dir.run("show_overview");
+        await new Promise((r) => setTimeout(r, 1500));
+        const firstId = guidedRef.current.nodeSeq.find(Boolean) ?? segs.scene.objects?.[0]?.id;
+        await dir.run("focus_node", { node_id: firstId });
+        const meta = await guidedRef.current.getIntro(2500);
+        const parts = (segs.scene.objects ?? [])
+          .filter((o) => o.type !== "note")
+          .map((o) => `${o.id} ("${o.label}")`)
+          .join(", ");
+        const steps = (segs.scene.sequence ?? []).map((s, k) => `${k + 1}) ${s.description || s.action}`).join(" ");
         voice.sendFunctionCallOutput(
           call_id,
-          `Animated diagram step ${i + 1} of ${segs.length} is playing now and the camera is moving to it: ${seg.spokenText} ${first}Explain this step aloud in two short, accurate sentences in your own calm voice, naming the part on screen. ${
-            last
-              ? 'Then ask: "Does that make sense?" and wait. Do not call any function yet.'
-              : `As you finish speaking, call show_segment(${i + 1}). Steady pace, no questions.`
-          }`
+          `The whole diagram was shown and the camera is now on "${(segs.scene.objects ?? []).find((o) => o.id === firstId)?.label || firstId}" with a simple picture above it. Diagram parts (id and label): ${parts}. Numbered steps: ${steps} ${
+            meta ? `First give this one short everyday metaphor in your own words: "${meta}". ` : ""
+          }Then explain that first part in two short accurate sentences, then call play_step(1) and keep directing as your rules say.`
         );
         return;
       }

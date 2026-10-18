@@ -67,7 +67,7 @@ function reducer(s, e) {
 // Shared guided-lesson state: ties the professor's spoken steps to the camera,
 // the GSAP scene and the per-node technical pictures. The complete scene is
 // never rebuilt; the camera only moves through it.
-export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, question }) {
+export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, question, auto = true }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const eventLog = useRef([]);
   const lessonIdRef = useRef(null);
@@ -160,32 +160,53 @@ export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, quest
     [emit, nodeSeq, requestImage]
   );
 
-  // Explicit teaching-step events drive the camera.
-  useEffect(() => {
-    if (!state.guidedModeEnabled || stepIdx < 0 || lessonStatus === "idle" || lessonStatus === "done") return;
-    const node = nodeSeq[stepIdx];
-    if (!node) return;
-    const prev = focusedRef.current;
-    if (prev === node) {
-      emit("PLAY_NODE_ANIMATION", { nodeId: node });
-      return;
-    }
-    const my = ++runRef.current;
-    focusedRef.current = node;
-    (async () => {
+  const guidedOnRef = useRef(true);
+  guidedOnRef.current = state.guidedModeEnabled;
+
+  // Moves the camera to a node (following the connection from the previous
+  // or given node when `follow`), then settles, shows its picture and returns.
+  // Used by both the professor's commands and the automatic step events.
+  const travelTo = useCallback(
+    async (node, idx, { follow = false, from, showDot = true } = {}) => {
+      if (!node || !guidedOnRef.current) return;
+      const prev = from ?? focusedRef.current;
+      if (prev === node) {
+        emit("PLAY_NODE_ANIMATION", { nodeId: node });
+        return;
+      }
+      const my = ++runRef.current;
+      focusedRef.current = node;
       if (prev) emit("NODE_EXPLANATION_COMPLETED", { nodeId: prev });
       emit("PLAY_NODE_ANIMATION", { nodeId: node });
-      if (prev) {
+      if (follow && prev) {
         emit("FOLLOW_CONNECTION", { from: prev, to: node });
-        const st = sceneRef.current?.sequence?.[stepIdx];
-        const hasPacket = st?.action === "emit_packet" && st.from === prev && st.to === node;
-        await canvasRef.current?.followConnection(prev, node, { showDot: !hasPacket });
+        await canvasRef.current?.followConnection(prev, node, { showDot });
       } else {
         emit("FOCUS_NODE", { nodeId: node });
         await canvasRef.current?.focusNode(node);
       }
-      if (runRef.current === my) arrive(node, stepIdx);
-    })();
+      if (runRef.current === my) arrive(node, idx);
+    },
+    [arrive, emit, canvasRef]
+  );
+
+  const overview = useCallback(() => {
+    runRef.current += 1;
+    focusedRef.current = null;
+    emit("SHOW_OVERVIEW");
+    return canvasRef.current?.showOverview();
+  }, [emit, canvasRef]);
+
+  // Automatic camera for teaching steps (disabled when the professor directs
+  // the camera with explicit commands).
+  useEffect(() => {
+    if (!auto || !state.guidedModeEnabled || stepIdx < 0 || lessonStatus === "idle" || lessonStatus === "done") return;
+    const node = nodeSeq[stepIdx];
+    if (!node) return;
+    const st = sceneRef.current?.sequence?.[stepIdx];
+    const prev = focusedRef.current;
+    const hasPacket = st?.action === "emit_packet" && st.from === prev && st.to === node;
+    travelTo(node, stepIdx, { follow: true, showDot: !hasPacket });
   }, [stepIdx, lessonStatus, state.guidedModeEnabled, nodeSeq]);
 
   // Lesson finished: pull back to the complete diagram.
@@ -257,5 +278,5 @@ export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, quest
     state.cameraMode === "focused" && state.focusedNodeId ? state.imageByNodeId[state.focusedNodeId] : null;
   const focusedLabel = (scene?.objects ?? []).find((o) => o.id === state.focusedNodeId)?.label;
 
-  return { state, imageUrl, focusedLabel, focusFirst, getIntro, selectNode, zoomOut, setGuided, eventLog };
+  return { state, imageUrl, focusedLabel, focusFirst, getIntro, selectNode, zoomOut, setGuided, eventLog, travelTo, overview, nodeSeq };
 }

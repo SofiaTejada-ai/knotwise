@@ -220,6 +220,57 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
         await camTo(bv.x, bv.y, 1.7, 0.9, "power2.out");
         if (dot) gsap.to(dot, { opacity: 0, duration: 0.3, onComplete: () => dot.remove() });
       },
+      // Pulses a node (the "this is what we are talking about" highlight).
+      highlightNode: (id) =>
+        new Promise((res) => {
+          const p = nodePos(id);
+          const node = document.getElementById(`pulse-${id}`);
+          if (!p || !node) return res();
+          const o = { svgOrigin: `${p.x} ${p.y}` };
+          gsap
+            .timeline({ onComplete: res })
+            .set(node, { attr: { filter: "url(#pulseGlow)" } })
+            .to(node, { scale: 1.3, ...o, duration: reduced() ? 0 : 0.4, ease: "power2.out" })
+            .to(node, { scale: 1, ...o, duration: reduced() ? 0 : 0.4, ease: "power2.in" })
+            .set(node, { attr: { filter: "" } });
+        }),
+      // A labelled value leaves the source, travels along a growing arrow and
+      // enters the destination box. Resolves only once it has arrived.
+      transfer: (a, b, value, color = "#4f9eff") =>
+        new Promise((res) => {
+          const A = nodePos(a);
+          const B = nodePos(b);
+          const layer = travelRef.current;
+          if (!A || !B || !layer) return res();
+          const dur = reduced() ? 0 : 1.8;
+          const line = el("line", { x1: A.x, y1: A.y, x2: A.x, y2: A.y, stroke: color, "stroke-width": 3, opacity: 0.9 });
+          const tok = el("g");
+          tok.appendChild(el("circle", { r: 11, fill: color, filter: "url(#packetGlow)" }));
+          const t = el("text", {
+            y: -18, "text-anchor": "middle", "font-size": 13, "font-weight": 700, "font-family": MONO,
+            fill: "#0f172a", stroke: "#ffffff", "stroke-width": 4, "paint-order": "stroke"
+          });
+          t.textContent = String(value ?? "").slice(0, 24);
+          tok.appendChild(t);
+          layer.appendChild(line);
+          layer.appendChild(tok);
+          const ang = (Math.atan2(B.y - A.y, B.x - A.x) * 180) / Math.PI;
+          const L = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+          const hx = B.x - ((B.x - A.x) / L) * 34;
+          const hy = B.y - ((B.y - A.y) / L) * 34;
+          const head = el("polygon", { points: "0,-8 16,0 0,8", fill: color, opacity: 0 });
+          layer.appendChild(head);
+          gsap.set(head, { x: hx, y: hy, rotation: ang, svgOrigin: `${hx} ${hy}` });
+          gsap.set(tok, { x: A.x, y: A.y, scale: 0 });
+          gsap
+            .timeline({ onComplete: res })
+            .to(tok, { scale: 1, duration: reduced() ? 0 : 0.35, ease: "back.out(2)" })
+            .to(tok, { x: B.x, y: B.y, duration: dur, ease: "power1.inOut" }, ">")
+            .to(line, { attr: { x2: B.x, y2: B.y }, duration: dur, ease: "power1.inOut" }, "<")
+            .to(head, { opacity: 1, duration: 0.2 }, "-=0.3")
+            .to(tok, { scale: 0.2, opacity: 0, duration: reduced() ? 0 : 0.3, ease: "power2.in" });
+        }),
+      setPaused: (p) => (p ? gsap.globalTimeline.pause() : gsap.globalTimeline.resume()),
       getView: () => ({ ...cam.current })
     };
   });

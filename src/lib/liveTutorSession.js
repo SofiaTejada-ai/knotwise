@@ -61,6 +61,53 @@ export const MOVE_NODE_TOOL = {
   }
 };
 
+const idParam = (d) => ({ type: "string", description: d });
+const tool = (name, description, properties = {}, required = []) => ({
+  type: "function",
+  name,
+  description,
+  parameters: { type: "object", properties, required }
+});
+
+// Visual commands the professor uses to direct the animated diagram.
+export const DIRECTOR_TOOLS = [
+  tool("focus_node", "Zoom the camera into one part of the diagram and show its simple picture above it.", { node_id: idParam("Part id from the diagram list") }, ["node_id"]),
+  tool("show_overview", "Zoom out to show the complete diagram."),
+  tool("highlight_node", "Pulse one part to point at the concept you are naming.", { node_id: idParam("Part id") }, ["node_id"]),
+  tool("follow_connection", "Move the camera along the arrow from one part to the next.", { from_id: idParam("Source part id"), to_id: idParam("Destination part id") }, ["from_id", "to_id"]),
+  tool(
+    "animate_transfer",
+    "Send a short value, request or packet along the arrow from one part into another. The camera follows it. Afterwards call update_node_state to show how the destination changed.",
+    { from_id: idParam("Source part id"), to_id: idParam("Destination part id"), value: idParam("Short label of what travels, up to 24 characters") },
+    ["from_id", "to_id", "value"]
+  ),
+  tool(
+    "update_node_state",
+    "Visibly change what is inside a part (its items, value or label). Call it right after a value arrives, or when a part's contents change.",
+    {
+      node_id: idParam("Part id"),
+      props: {
+        type: "object",
+        description: "New contents: items (list of short strings), value, or label",
+        properties: { items: { type: "array", items: { type: "string" } }, value: { type: "string" }, label: { type: "string" } }
+      }
+    },
+    ["node_id", "props"]
+  ),
+  tool("play_step", "Play one numbered teaching step of the diagram (starting at 1). The camera follows it. The result arrives when it has finished.", { step_id: { type: "number", description: "Step number, starting at 1" } }, ["step_id"]),
+  tool("pause_visuals", "Freeze the animation exactly where it is."),
+  tool("resume_visuals", "Continue the animation from where it was frozen.")
+];
+
+// Added to the tutor instructions: the professor directs the camera.
+export const DIRECTOR_RULES = `
+DIRECTING THE ANIMATED DIAGRAM (when show_segment(0) lists the diagram's parts, these rules replace steps 1-3 above):
+- You are the director. The student never clicks anything. Narrate in one short sentence what is about to happen, THEN call the visual command, so speech and animation run together.
+- Start: call show_segment(0). It shows the whole diagram, zooms the camera into the first part and lists part ids and numbered steps. Give the one short metaphor it provides (first part only), then explain that part.
+- Then move through the lesson with play_step(1), play_step(2), and so on. Use animate_transfer to send a value along an arrow, update_node_state right after it arrives to show what changed in the destination (and in the source if it changes), follow_connection or focus_node to move attention, show_overview to step back, highlight_node to point at something.
+- Every tool result tells you the visual has FINISHED. Then explain why the state changed. Only use part ids from the list. Never describe something that has not appeared yet.
+- If the student interrupts, answer them directly and calmly. The picture stays exactly as it is. Continue from the current state; never restart or repeat earlier steps. Call resume_visuals only if you paused the visuals yourself.`;
+
 export function preferenceLines(profile) {
   const lines = [];
   if (profile?.slowerPacing) lines.push("Speak slowly and leave clear pauses between sentences.");
@@ -146,6 +193,8 @@ HOW TO PRESENT THE ACTIVE TOPIC (follow this exactly):
 6. If the tool result says the practice quiz is on screen: read the question aloud exactly, tell the student they can tap or circle their answer on screen, then wait. The screen reports what the student did. Praise a correct answer in one short sentence, then call move_to_node with the next topic id and stay silent until its result arrives. If they missed, encourage them to try again without revealing the answer. If they missed twice, re-teach the idea in very simple everyday words, then invite them to try the last choice.
 7. If the student interrupts or asks a follow-up, answer it conversationally, then continue from the current part. Never restart the presentation. If the screen reports the student tapped a part of the diagram, explain that part briefly.
 8. After the LAST topic is done, call move_to_node with node_id "wrap_up" and close the lesson warmly in two sentences.
+
+${DIRECTOR_RULES}
 
 Practice history so far: ${practice}
 Student age or grade range: ${profile?.ageRange ?? "not set"}. ${preferenceLines(profile).join(" ")}
