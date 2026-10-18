@@ -4,7 +4,9 @@
 //    never skipping a step).
 //  - playback: temporary replay speed chosen by the professor for one
 //    command ("show that again, slower"). 1 = normal, 0.65 slower, 0.4 very slow.
-export const timing = { scale: 1, playback: 1 };
+//  - pace: this student's pace for the session, from the learner model
+//    (0.7 very slow ... 1.15 brisk).
+export const timing = { scale: 1, playback: 1, pace: 1 };
 
 // Per-animation base durations in seconds (not one global speed).
 // Tuned for a classroom pace: a moving value stays readable for ~2s.
@@ -27,4 +29,5 @@ export const parseSpeed = (s) => {
   return Number.isFinite(n) && n > 0 ? Math.max(0.4, Math.min(1, n)) : 1;
 };
 
-export const scaled = (seconds) => (seconds * Math.max(0.5, Math.min(1, timing.scale))) / timing.playback;
+export const scaled = (seconds) =>
+  (seconds * Math.max(0.5, Math.min(1, timing.scale))) / (timing.playback * Math.max(0.6, Math.min(1.2, timing.pace)));

@@ -2,6 +2,7 @@ import { nodeForStep } from "@/hooks/useGuidedLesson";
 import { explainResult } from "@/lib/dsEngine";
 import { trace } from "@/lib/lessonTrace";
 import { TEXT_TOOL_NAMES } from "@/lib/textCommands";
+import { timing, parseSpeed } from "@/lib/animTiming";
 
 // Semantic navigation for the live professor: revisit a part, replay a step or
 // an example, retrace a transition, explain a state change, compare states,
@@ -27,14 +28,16 @@ export const REVISIT_TOOL_NAMES = [
   "compare_states",
   "return_to_previous_focus",
   "resume_original_teaching_path",
-  "get_teaching_history"
+  "get_teaching_history",
+  "replay_range",
+  "continue_range"
 ];
 
 export function createRevisit(ctx) {
-  const { api, hist, text, getDs, playOpVisual, reconcile, opMessage, find, labelOf, needNode, seqIndex } = ctx;
+  const { api, hist, text, getDs, playOpVisual, reconcile, opMessage, find, labelOf, needNode, seqIndex, learner } = ctx;
   // revisiting: a detour is in progress. returnTo: where the detour began.
   // pos: the original teaching position (furthest point of the real lesson).
-  const state = { revisiting: false, returnTo: null, pos: { nodeId: null, stepN: 0 }, restore: null };
+  const state = { revisiting: false, returnTo: null, pos: { nodeId: null, stepN: 0 }, restore: null, range: null };
 
   const lessonId = () => api.scene()?.scene_id ?? "";
   const seq = () => api.scene()?.sequence ?? [];
@@ -212,6 +215,37 @@ export function createRevisit(ctx) {
     return false;
   };
 
+  const playRangeItem = async () => {
+    const r = state.range;
+    const n = r.queue.shift();
+    r.shown += 1;
+    const d = getDs();
+    const id = lessonId();
+    let ev = null;
+    let label;
+    if (r.ops) {
+      const rec = d?.ops[n - 1];
+      ev = rec ? hist.resolve(id, `op_${rec.seq}`) ?? { eventType: "ds_operation", seq: rec.seq, lessonId: id, description: explainResult(rec) } : null;
+      label = `operation ${n}`;
+    } else {
+      ev = hist.resolve(id, n) ?? { eventType: "play_step", stepId: `step_${n}`, description: seq()[n - 1]?.description || `Step ${n}`, lessonId: id };
+      label = `step ${n}`;
+    }
+    const ok = ev ? await replayEvent(ev, { follow: true }) : false;
+    const what = ev?.description ? `: ${String(ev.description).replace(/[.\s]+$/, "")}` : "";
+    const left = r.queue;
+    const notes = [
+      r.shown === 1 && r.skipped.length ? `Skipped at the student's request: ${r.skipped.join(", ")}.` : "",
+      r.shown === 1 && r.known.length ? `Skipped because the student already knows them: ${r.known.join(", ")}.` : ""
+    ].join(" ");
+    if (!left.length) state.range = null;
+    return `${ok ? "Replayed" : "Could not replay"} ${label} (${r.shown} of ${r.total} in this range)${what}. ${notes} ${current()} Nothing was executed again. ${
+      left.length
+        ? `Explain this one now, slowly. Then call continue_range for ${r.ops ? "operation" : "step"} ${left[0]} (remaining in order: ${left.join(", ")}). Never jump ahead or straight to the last one.`
+        : `That was the last one in the range. Briefly connect what the student saw. ${afterNote}`
+    }`;
+  };
+
   const current = () => {
     const d = getDs();
     return d ? `The real data is unchanged: ${d.struct.kind} [${d.struct.items.join(", ")}].` : "The real diagram state is unchanged.";
@@ -362,11 +396,50 @@ export function createRevisit(ctx) {
             : `All steps are done. Check understanding, asking exactly: "Does that make sense?"`
       } Lesson events so far: ${hist.brief(id, labelOf, 5)}.`;
     },
+    // A range ("from step 1 to the end, without step 2") is expanded by the
+    // app into an ordered queue. The professor plays it one item per call with
+    // continue_range, explaining in between, and can never jump to the end.
+    async replay_range({ from_step, to_step, skip_steps, include_known, over, speed }) {
+      const d = getDs();
+      const ops = over === "operations" || (over !== "steps" && d?.ops.length && !hist.forLesson(lessonId()).some((e) => e.eventType === "play_step"));
+      const total = ops ? d?.ops.length ?? 0 : seq().length;
+      if (!total) return `Not done: there are no ${ops ? "operations" : "steps"} to replay yet.`;
+      let a = Math.round(Number(from_step) || 1);
+      let b = to_step === undefined || to_step === null || to_step === "" || /last|end/i.test(String(to_step)) ? total : Math.round(Number(to_step));
+      if (a > b) [a, b] = [b, a];
+      a = Math.max(1, a);
+      b = Math.min(total, b);
+      const skip = new Set((Array.isArray(skip_steps) ? skip_steps : []).map((n) => Math.round(Number(n))));
+      const known = [];
+      const queue = [];
+      for (let n = a; n <= b; n++) {
+        if (skip.has(n)) continue;
+        if (!ops && !include_known && learner?.isKnown(n)) {
+          known.push(n);
+          continue;
+        }
+        queue.push(n);
+      }
+      if (!queue.length) return `Not done: every ${ops ? "operation" : "step"} from ${a} to ${b} was skipped. Ask the student what they want to see.`;
+      enterRevisit();
+      state.range = { ops, queue, total: queue.length, shown: 0, speed: speed ?? "normal", skipped: [...skip].filter((n) => n >= a && n <= b), known };
+      return playRangeItem();
+    },
+    async continue_range({ speed }) {
+      if (!state.range?.queue.length) {
+        state.range = null;
+        return `Not done: no range replay is in progress. ${afterNote}`;
+      }
+      if (speed === undefined) timing.playback = parseSpeed(state.range.speed);
+      else state.range.speed = speed;
+      return playRangeItem();
+    },
     async get_teaching_history() {
       const id = lessonId();
       const q = hist.students.slice(-4).map((s) => `"${s.text}"`).join("; ");
       const cam = hist.camera.slice(-6).map((c) => labelOf(c.nodeId)).join(" -> ");
-      return `Teaching history: ${hist.brief(id, labelOf, 12) || "nothing yet"}. Camera path: ${cam || "none"}. Recent student questions: ${q || "none"}. ${current()} ${state.revisiting ? `A review is in progress; the original position is "${labelOf(state.pos.nodeId)}", step ${state.pos.stepN}.` : `Current teaching position: "${labelOf(state.pos.nodeId)}", step ${state.pos.stepN}.`} Use ids from this list in replay_step / replay_example / explain_state_change / compare_states.`;
+      const prof = learner?.profileText();
+      return `${prof ? `${prof}\n` : ""}Teaching history: ${hist.brief(id, labelOf, 12) || "nothing yet"}. Camera path: ${cam || "none"}. Recent student questions: ${q || "none"}. ${current()} ${state.revisiting ? `A review is in progress; the original position is "${labelOf(state.pos.nodeId)}", step ${state.pos.stepN}.` : `Current teaching position: "${labelOf(state.pos.nodeId)}", step ${state.pos.stepN}.`} Use ids from this list in replay_step / replay_example / explain_state_change / compare_states.`;
     }
   };
 

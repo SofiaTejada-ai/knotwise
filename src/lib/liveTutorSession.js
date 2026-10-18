@@ -101,7 +101,18 @@ export const DIRECTOR_TOOLS = [
     },
     ["node_id", "props"]
   ),
-  tool("play_step", "Play one numbered teaching step of the diagram (starting at 1). The camera follows it. The result arrives when it has finished.", { step_id: { type: "number", description: "Step number, starting at 1" } }, ["step_id"]),
+  tool(
+    "play_step",
+    "Play one numbered teaching step of the diagram (starting at 1). The camera follows it. The result arrives when it has finished. Steps the student said they know are refused unless force is true.",
+    { step_id: { type: "number", description: "Step number, starting at 1" }, force: { type: "boolean", description: "true only if the student asks to see a step they had skipped" } },
+    ["step_id"]
+  ),
+  tool(
+    "skip_steps",
+    "Mark teaching steps the student already knows, so the lesson and range replays skip them. Use when the student says they already know a part.",
+    { step_ids: { type: "array", items: { type: "number" }, description: "Step numbers the student already knows" } },
+    ["step_ids"]
+  ),
   tool("pause_animation", "Freeze the animation exactly where it is."),
   tool("resume_animation", "Continue the animation from where it was frozen."),
   tool(
@@ -168,6 +179,19 @@ export const DIRECTOR_TOOLS = [
     "Replay an earlier example (operation, value transfer, equation steps, SQL highlight) from its RECORDED state, then restore the real state. Omit example_id for the most recent example. The data is never changed by a replay.",
     { example_id: idParam("History id such as op_2 or transform_equation_1; omit for the latest example"), speed: SPEED }
   ),
+  tool(
+    "replay_range",
+    "Replay a RANGE in order (for example step 1 to the last, or operations 2 to 4), optionally skipping some. Plays only the first one; after explaining it, call continue_range for each next one. Visual only.",
+    {
+      from_step: { type: "number", description: "First step or operation number (default 1)" },
+      to_step: { type: "string", description: "Last number, or \"last\" for the end" },
+      skip_steps: { type: "array", items: { type: "number" }, description: "Numbers to leave out because the student asked" },
+      include_known: { type: "boolean", description: "true to also show steps the student said they already know" },
+      over: { type: "string", enum: ["steps", "operations"], description: "steps of the diagram, or stack/queue operations" },
+      speed: SPEED
+    }
+  ),
+  tool("continue_range", "Play the next item of the range replay in progress, after you explained the previous one. The result says what remains.", { speed: SPEED }),
   tool("trace_previous_transition", "Zoom out to show how the focused part was reached and replay the value moving along the connecting arrow. Use for 'how did we get here?' and 'where did that come from?'.", { speed: SPEED }),
   tool(
     "explain_state_change",
@@ -261,6 +285,8 @@ export const DIRECTOR_TOOLS = [
 
 // Added to the tutor instructions: the professor directs the camera.
 export const DIRECTOR_RULES = `
+ADAPTING TO THIS STUDENT: a LEARNER PROFILE block may appear at the very end of these instructions. The app writes it from what the student actually did in this session (asked to slow down, said they were confused, skipped steps, asked for replays). Follow it quietly: adjust pace, number of examples, check-ins and what you skip. Never read it out or label the student; you may say things like "you asked me to slow down earlier, so let's take this one step at a time".
+
 TEACHING STYLE (always): you are a teacher standing at a whiteboard, and the diagram is your board.
 - Speak noticeably slower than normal conversation, in short sentences, and pause after each important idea. Never rush. One operation or one idea at a time.
 - Point at the board while you talk ("look at the top of the stack, here"), and let each animation finish before you move on.
@@ -305,6 +331,8 @@ GOING BACK AND REVISITING (the student speaks naturally and never names parts, s
 - Interpret what the student means in context, then choose the command. If unsure what they refer to, call get_teaching_history. Say one short sentence ("Sure, let's go back to the attacker"), then call the command.
 - "Go back to X" / "explain that part again" -> revisit_node with the part that matches. "Show me the last example" / "show me again" -> replay_example (queue or stack: why did 10 leave? call ds_state, then replay_example). "How did we get here?" / "where did that come from?" / "how do we get from here to there?" -> trace_previous_transition (it zooms out, then follows the arrow). "Why did the value change?" -> explain_state_change. "Show me the difference" -> compare_states. "What happened before this?" -> replay_step on the step before, or trace_previous_transition.
 - A conceptual question needs no camera move: answer while staying on the current part.
+- RANGES: "show me step 1 to the last", "walk me through all of it again", "everything except step 2", "replay all the operations" -> replay_range (with skip_steps for what they want left out). It plays the FIRST one only; explain it, then call continue_range, and repeat until the result says it was the last. Never jump straight to the last step.
+- SKIPPING: "I already know this part", "skip the producer step" -> make sure which steps they mean (ask if unclear), call skip_steps, then continue with the step the result names. If they later ask to see a skipped step, play_step with force true or replay_step.
 - Replays only show the past. NEVER call ds_operation to show something again, because that would change the real data a second time. Use replay_example.
 - After the replay, explain what the student watched using the tool result only. Then decide: stay, return_to_previous_focus, or ask if they are ready. When they say things like "okay, I understand, continue", call resume_original_teaching_path and follow its next step (usually play_step). Never restart the lesson or repeat completed steps or operations.`;
 

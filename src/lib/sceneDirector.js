@@ -5,6 +5,7 @@ import { trace } from "@/lib/lessonTrace";
 import { createHistory } from "@/lib/teachingHistory";
 import { createRevisit, REVISIT_TOOL_NAMES } from "@/lib/revisitCommands";
 import { createExpandCommands, EXPAND_TOOL_NAMES } from "@/lib/expandDiagram";
+import { createLearnerModel } from "@/lib/learnerModel";
 import {
   KINDS,
   RULES,
@@ -58,6 +59,7 @@ export const DIRECTOR_TOOL_NAMES = [
   "ds_operation",
   "ds_replay",
   "ds_state",
+  "skip_steps",
   ...Object.keys(EXAMPLE_ALIASES),
   ...REVISIT_TOOL_NAMES,
   ...TEXT_TOOL_NAMES,
@@ -70,7 +72,7 @@ const PAUSE_NAMES = ["pause_visuals", "resume_visuals", "pause_animation", "resu
 // Commands that move nothing: the node picture may stay visible during them.
 // Every other command moves values or the camera along a path, and the
 // picture is hidden so it never covers the operation being taught.
-const STILL_NAMES = ["focus_node", "show_overview", "highlight_node", "ds_state", "get_teaching_history", "hide_text", ...PAUSE_NAMES];
+const STILL_NAMES = ["focus_node", "show_overview", "highlight_node", "ds_state", "get_teaching_history", "hide_text", "skip_steps", ...PAUSE_NAMES];
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const hold = (k = 1) => delay(scaled(DUR.hold * k) * 1000);
 
@@ -83,6 +85,8 @@ export function createDirector(api) {
   let opSeq = 0;
   let exampleSeq = 0;
   const history = [];
+  // Temporary memory of how this student learns (this session only).
+  const learner = createLearnerModel();
 
   const objects = () => api.scene()?.objects ?? [];
   const find = (id) => objects().find((o) => o.id === id);
@@ -213,7 +217,8 @@ export function createDirector(api) {
     find,
     labelOf,
     needNode,
-    seqIndex
+    seqIndex,
+    learner
   });
 
   const commands = {
@@ -268,10 +273,14 @@ export function createDirector(api) {
       await api.canvas()?.highlightNode(node_id);
       return `"${labelOf(node_id)}" now visibly shows ${JSON.stringify(clean)}. Explain what changed and why.`;
     },
-    async play_step({ step_id }) {
+    async play_step({ step_id, force }) {
       const seq = api.scene()?.sequence ?? [];
       const n = Math.round(Number(step_id));
       if (!(n >= 1 && n <= seq.length)) return `There is no step ${step_id}. Steps run from 1 to ${seq.length}.`;
+      if (learner.isKnown(n) && force !== true) {
+        const next = nextUnknown(n);
+        return `Not done: the student already knows step ${n} and asked to skip it. ${next ? `Continue with play_step(${next}).` : "There are no further steps; summarize and check understanding."} Use force true only if the student asks to see step ${n}.`;
+      }
       const idx = n - 1;
       const step = seq[idx];
       const node = nodeForStep(step, idx);
@@ -354,6 +363,19 @@ export function createDirector(api) {
       }
       return opMessage(d, rec, true);
     },
+    // The student says they already know some steps: they are skipped in the
+    // lesson (play_step refuses them) and in range replays.
+    async skip_steps({ step_ids }) {
+      const total = (api.scene()?.sequence ?? []).length;
+      const ids = (Array.isArray(step_ids) ? step_ids : [step_ids]).map((v) => Math.round(Number(v))).filter((n) => n >= 1 && n <= total);
+      if (!ids.length) return `Not done: give step numbers from 1 to ${total}.`;
+      learner.markKnown(ids);
+      const done = rv.state.pos.stepN;
+      const next = nextUnknown(done);
+      return `Done: steps ${ids.join(", ")} are marked as already known and will be skipped. ${
+        next ? `The next step the student does not know yet is ${next}: say one short sentence about skipping ahead, then call play_step(${next}).` : "No unknown steps remain; summarize and check understanding."
+      }`;
+    },
     async ds_state() {
       const d = getDs();
       if (!d) return "No data-structure diagram is on screen.";
@@ -377,6 +399,12 @@ export function createDirector(api) {
 
   Object.assign(commands, rv.commands, text.commands, expand.commands);
 
+  function nextUnknown(after) {
+    const total = (api.scene()?.sequence ?? []).length;
+    for (let k = after + 1; k <= total; k++) if (!learner.isKnown(k)) return k;
+    return null;
+  }
+
   const run = (name, args = {}) => {
     name = EXAMPLE_ALIASES[name] || name;
     const fn = commands[name];
@@ -396,7 +424,9 @@ export function createDirector(api) {
         }
         // Adaptive pace: shorter transitions while commands are waiting.
         timing.scale = pending > 2 ? 0.75 : pending > 1 ? 0.85 : 1;
-        // Temporary replay speed for this one command ("show it again, slower").
+        // This student's pace for the session, then a temporary replay speed
+        // for this one command ("show it again, slower").
+        timing.pace = learner.knobs().animPace;
         timing.playback = args.speed !== undefined ? parseSpeed(args.speed) : 1;
         if (timing.playback < 1) timing.scale = 1;
         const limit = (TIMEOUT_MS + (Array.isArray(args.steps) ? args.steps.length * 2500 : 0)) / timing.playback;
@@ -422,6 +452,7 @@ export function createDirector(api) {
           return "The visual took too long and was finished safely. The diagram shows the current real state. Keep explaining.";
         }
         trace("cmd_completed", { name, ms: Math.round(performance.now() - t0) });
+        learner.command(name, args, out.r);
         if (!REVISIT_TOOL_NAMES.includes(name)) rv.track(name, args, before, out.r);
         return out.r;
       } catch (err) {
@@ -473,7 +504,11 @@ export function createDirector(api) {
     history,
     teaching: hist,
     revisit: rv.state,
-    noteStudent: hist.noteStudent,
+    noteStudent: (t) => {
+      hist.noteStudent(t);
+      learner.noteStudent(t);
+    },
+    learner,
     noteProfessor: hist.noteProfessor,
     isPaused: () => paused,
     pending: () => pending,

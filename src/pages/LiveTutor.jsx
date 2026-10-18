@@ -161,6 +161,40 @@ export default function LiveTutor() {
     });
   }
 
+  // Session learner model (temporary memory). The professor's instructions
+  // always end with its profile; when the profile or the pace changes, the
+  // live session is refreshed (instructions only, tools untouched) and the
+  // voice pace follows.
+  const learner = directorRef.current.learner;
+  const lastInstrRef = useRef(null);
+  const speechRef = useRef(null);
+  const withProfile = (instructions) => {
+    lastInstrRef.current = instructions;
+    const prof = learner.profileText();
+    return prof ? `${instructions}\n\n${prof}` : instructions;
+  };
+  useEffect(() => {
+    let timer = null;
+    let sig = learner.signature();
+    const off = learner.onChange(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const next = learner.signature();
+        if (next === sig) return;
+        sig = next;
+        if (lastInstrRef.current) voice.updateSession(withProfile(lastInstrRef.current));
+        const speed = learner.knobs().speechSpeed;
+        if (speechRef.current !== null && speechRef.current !== speed) voice.setSpeechSpeed(speed);
+        speechRef.current = speed;
+      }, 1200);
+    });
+    speechRef.current = learner.knobs().speechSpeed;
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, []);
+
   useAutoCamera({
     scene: tutor.scene,
     active: phase === "teaching" && sceneMode === "present",
@@ -175,8 +209,11 @@ export default function LiveTutor() {
   // committed state. It fires when the student STARTS talking: the transcript
   // arrives later, often after the professor already issued the command the
   // student asked for, and must not cancel it.
+  const speakingRef = useRef(false);
   useEffect(() => {
-    if (phase === "teaching" && voice.bargeIns) directorRef.current.interrupt();
+    if (phase !== "teaching" || !voice.bargeIns) return;
+    directorRef.current.interrupt();
+    if (speakingRef.current) learner.interruption();
   }, [voice.bargeIns]);
   useEffect(() => {
     if (phase === "teaching" && voice.userTranscript) directorRef.current.noteStudent(voice.userTranscript);
@@ -337,7 +374,7 @@ export default function LiveTutor() {
         activeRef.current = first.id;
         orch.setTopic(first.label, first.description);
         voice.updateSession(
-          teachingInstructions(m, first.id, practiceRef.current, profileRef.current),
+          withProfile(teachingInstructions(m, first.id, practiceRef.current, profileRef.current)),
           TEACHING_TOOLS
         );
         prefetchNext(first);
@@ -451,6 +488,7 @@ export default function LiveTutor() {
   // Keep the shared lesson state in step with what the professor is doing.
   useEffect(() => {
     orch.setProfessorStatus(voice.status);
+    speakingRef.current = voice.status === "speaking";
   }, [voice.status]);
   useEffect(() => {
     if (voice.userTranscript) orch.noteInteraction("speech", voice.userTranscript.slice(0, 120));
@@ -494,7 +532,7 @@ export default function LiveTutor() {
       // immediately while the diagram and outline build in parallel.
       const q = String(args?.question ?? "").trim() || voice.userTranscript || "the student's question";
       beginStreaming(q);
-      voice.updateSession(streamingInstructions(q, profileRef.current), TEACHING_TOOLS);
+      voice.updateSession(withProfile(streamingInstructions(q, profileRef.current)), TEACHING_TOOLS);
       nudgedRef.current = true; // the function output below cues the tutor
       voice.sendFunctionCallOutput(
         call_id,
@@ -583,6 +621,7 @@ export default function LiveTutor() {
         return;
       }
       const node = mapRef.current?.nodes.find((n) => n.id === activeRef.current);
+      learner.confirm(args?.understood === true, args?.confusion);
       if (args?.understood === true) {
         const p = node?.practice;
         if (p && Array.isArray(p.choices) && p.choices.length === 3) {
@@ -627,7 +666,7 @@ export default function LiveTutor() {
       markDone(activeRef.current);
       openNode(node);
       voice.updateSession(
-        teachingInstructions(m, node.id, practiceRef.current, profileRef.current),
+        withProfile(teachingInstructions(m, node.id, practiceRef.current, profileRef.current)),
         TEACHING_TOOLS
       );
       // Usually the next topic's diagram was prefetched while the last one was
@@ -671,6 +710,8 @@ export default function LiveTutor() {
     segCacheRef.current = {};
     prefetchingRef.current = {};
     tutorRef.current.reset();
+    learner.reset(); // temporary memory lasts one session
+    lastInstrRef.current = null;
 
     const question = (typedQuestion ?? "").trim();
     if (question) {
@@ -678,7 +719,7 @@ export default function LiveTutor() {
       // outline builds in the background.
       beginStreaming(question);
       voice.start(profileContext(p), {
-        instructions: streamingInstructions(question, p),
+        instructions: withProfile(streamingInstructions(question, p)),
         tools: TEACHING_TOOLS,
         onToolCall: handleToolCall
       });
@@ -700,14 +741,14 @@ export default function LiveTutor() {
     if (m && activeRef.current) {
       nudgedRef.current = false;
       voice.start(profileContext(p), {
-        instructions: teachingInstructions(m, activeRef.current, practiceRef.current, p),
+        instructions: withProfile(teachingInstructions(m, activeRef.current, practiceRef.current, p)),
         tools: TEACHING_TOOLS,
         onToolCall: handleToolCall
       });
     } else if (orch.stateRef.current.lessonId && questionRef.current) {
       nudgedRef.current = false;
       voice.start(profileContext(p), {
-        instructions: streamingInstructions(questionRef.current, p),
+        instructions: withProfile(streamingInstructions(questionRef.current, p)),
         tools: TEACHING_TOOLS,
         onToolCall: handleToolCall
       });
@@ -783,6 +824,7 @@ export default function LiveTutor() {
 
   // --- Practice tracking: the scene reports the student's actual response ---
   const handleAttempt = (nodeId, entry) => {
+    learner.practice(entry);
     setPracticeLog((prev) => {
       const next = { ...prev, [nodeId]: { ...prev[nodeId], ...entry } };
       practiceRef.current = next;

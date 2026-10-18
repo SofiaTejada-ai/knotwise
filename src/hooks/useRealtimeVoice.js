@@ -262,6 +262,16 @@ export function useRealtimeVoice() {
     [sendEvent]
   );
 
+  // Voice pace for this student. Sent on its own so that, if the API refuses
+  // it, the instructions and tools updates are unaffected. Takes effect
+  // between turns.
+  const setSpeechSpeed = useCallback(
+    (speed) => {
+      sendEvent({ type: "session.update", session: { type: "realtime", audio: { output: { speed } } } });
+    },
+    [sendEvent]
+  );
+
   // Ask the tutor to start (or restart) speaking as soon as it is free.
   const requestResponse = useCallback(
     (instructions) => {
@@ -301,6 +311,7 @@ export function useRealtimeVoice() {
     start,
     stop,
     updateSession,
+    setSpeechSpeed,
     requestResponse,
     sendFunctionCallOutput,
     tellTutor
