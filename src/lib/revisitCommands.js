@@ -1,6 +1,7 @@
 import { nodeForStep } from "@/hooks/useGuidedLesson";
 import { explainResult } from "@/lib/dsEngine";
 import { trace } from "@/lib/lessonTrace";
+import { TEXT_TOOL_NAMES } from "@/lib/textCommands";
 
 // Semantic navigation for the live professor: revisit a part, replay a step or
 // an example, retrace a transition, explain a state change, compare states,
@@ -10,10 +11,11 @@ import { trace } from "@/lib/lessonTrace";
 //   - VISUAL replay: a temporary picture that is always restored afterwards
 // Nothing here runs a data-structure operation.
 
-const STATE_KEYS = ["items", "value", "label", "color", "text"];
-const FORWARD = ["play_step", "ds_operation", "animate_transfer", "update_node_state", "ds_start"];
+const STATE_KEYS = ["items", "value", "label", "color", "text", "highlight"];
+const TEXT_EVENTS = TEXT_TOOL_NAMES.filter((n) => n !== "hide_text");
+const FORWARD = ["play_step", "ds_operation", "animate_transfer", "update_node_state", "ds_start", ...TEXT_EVENTS];
 const RECORDED = [...FORWARD, "focus_node", "follow_connection"];
-const FAILED = /^(There is no|Give a short|Nothing to change|That box|No data-structure|Cancelled|Unknown|Supported)/;
+const FAILED = /^(There is no|Give a short|Nothing to change|That box|No data-structure|Cancelled|Unknown|Supported|Not done)/;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export const REVISIT_TOOL_NAMES = [
@@ -29,7 +31,7 @@ export const REVISIT_TOOL_NAMES = [
 ];
 
 export function createRevisit(ctx) {
-  const { api, hist, getDs, playOpVisual, reconcile, opMessage, find, labelOf, needNode, seqIndex } = ctx;
+  const { api, hist, text, getDs, playOpVisual, reconcile, opMessage, find, labelOf, needNode, seqIndex } = ctx;
   // revisiting: a detour is in progress. returnTo: where the detour began.
   // pos: the original teaching position (furthest point of the real lesson).
   const state = { revisiting: false, returnTo: null, pos: { nodeId: null, stepN: 0 }, restore: null };
@@ -95,7 +97,7 @@ export function createRevisit(ctx) {
     const d = getDs();
     const rec = name === "ds_operation" ? d?.ops[d.ops.length - 1] : null;
     const node =
-      name === "play_step" ? nodeForStep(step, n - 1) : name === "ds_operation" ? d?.meta.structId : args?.to_id || args?.node_id || focused();
+      name === "play_step" ? nodeForStep(step, n - 1) : name === "ds_operation" ? d?.meta.structId : args?.to_id || args?.node_id || args?.id || focused();
     const desc = {
       focus_node: () => `Focused on "${labelOf(node)}"`,
       follow_connection: () => `Followed the connection from "${labelOf(args.from_id)}" to "${labelOf(args.to_id)}"`,
@@ -103,7 +105,13 @@ export function createRevisit(ctx) {
       update_node_state: () => `"${labelOf(node)}" now shows {${shortProps(args.props)}}`,
       play_step: () => step?.description || step?.action || `Step ${n}`,
       ds_operation: () => (rec ? explainResult(rec) : "Data-structure operation"),
-      ds_start: () => `Started a ${args.kind} diagram`
+      ds_start: () => `Started a ${args.kind} diagram`,
+      show_text: () => `Showed ${args.kind || "text"} "${args.id}": ${args.content}`,
+      update_text: () => `"${args.id}" changed to: ${args.content}`,
+      replace_expression: () => `"${args.id}" was replaced by: ${args.content}`,
+      highlight_token: () => `Highlighted "${args.token}" in "${args.id}"`,
+      move_value: () => `"${args.value}" moved from "${labelOf(args.from_id)}" to "${labelOf(args.to_id)}"`,
+      transform_equation: () => `Equation "${args.id}": ${(args._steps ?? []).map((s) => s.expression).join(" -> ")}`
     }[name]();
     const count = hist.forLesson(id).filter((e) => e.eventType === name).length + 1;
     const stepId = name === "play_step" ? `step_${n}` : name === "ds_operation" && rec ? `op_${rec.seq}` : `${name}_${count}`;
@@ -159,6 +167,10 @@ export function createRevisit(ctx) {
 
   const replayEvent = async (ev, { follow = false } = {}) => {
     const c = () => api.canvas();
+    if (TEXT_EVENTS.includes(ev.eventType)) {
+      await withRestore(() => text.replay(ev, applySnapshot));
+      return true;
+    }
     if (ev.eventType === "ds_operation") {
       const d = getDs();
       const rec = d?.ops.find((o) => o.seq === ev.seq);
@@ -212,7 +224,8 @@ export function createRevisit(ctx) {
     for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) return list[i];
     return null;
   };
-  const REPLAYABLE = ["ds_operation", "animate_transfer", "update_node_state", "play_step"];
+  const REPLAYABLE = ["ds_operation", "animate_transfer", "update_node_state", "play_step", ...TEXT_EVENTS];
+  const EXAMPLES = ["ds_operation", "animate_transfer", "transform_equation", "move_value", "highlight_token", "replace_expression", "play_step"];
 
   const commands = {
     async revisit_node({ node_id, replay }) {
@@ -242,7 +255,7 @@ export function createRevisit(ctx) {
     async replay_example({ example_id }) {
       const id = lessonId();
       const ex = example_id ? hist.resolve(id, example_id) : null;
-      const ev = ex || latest((e) => e.eventType === "ds_operation") || latest((e) => e.eventType === "animate_transfer") || latest((e) => REPLAYABLE.includes(e.eventType));
+      const ev = ex || latest((e) => EXAMPLES.includes(e.eventType)) || latest((e) => REPLAYABLE.includes(e.eventType));
       if (!ev) return "There is no earlier example to replay yet. Teach one first.";
       enterRevisit();
       const d = getDs();

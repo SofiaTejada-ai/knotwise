@@ -1,5 +1,6 @@
 import { nodeForStep } from "@/hooks/useGuidedLesson";
-import { timing } from "@/lib/animTiming";
+import { timing, parseSpeed } from "@/lib/animTiming";
+import { createTextCommands, TEXT_TOOL_NAMES } from "@/lib/textCommands";
 import { trace } from "@/lib/lessonTrace";
 import { createHistory } from "@/lib/teachingHistory";
 import { createRevisit, REVISIT_TOOL_NAMES } from "@/lib/revisitCommands";
@@ -39,15 +40,19 @@ export const DIRECTOR_TOOL_NAMES = [
   "play_step",
   "pause_visuals",
   "resume_visuals",
+  "pause_animation",
+  "resume_animation",
   "ds_start",
   "ds_operation",
   "ds_replay",
   "ds_state",
-  ...REVISIT_TOOL_NAMES
+  ...REVISIT_TOOL_NAMES,
+  ...TEXT_TOOL_NAMES
 ];
 
 const STATE_KEYS = ["items", "value", "label", "color", "text"];
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = 15000;
+const PAUSE_NAMES = ["pause_visuals", "resume_visuals", "pause_animation", "resume_animation"];
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function createDirector(api) {
@@ -137,7 +142,9 @@ export function createDirector(api) {
 
   // Teaching history + semantic navigation (revisit, replay, retrace, resume).
   const hist = createHistory();
+  const text = createTextCommands({ api, find, needNode, dsStructId: () => getDs()?.meta.structId });
   const rv = createRevisit({
+    text,
     api,
     hist,
     getDs,
@@ -151,11 +158,13 @@ export function createDirector(api) {
   });
 
   const commands = {
-    async focus_node({ node_id }) {
+    async focus_node({ node_id, zoom_level }) {
       const bad = needNode(node_id);
       if (bad) return bad;
       await api.guided().travelTo(node_id, seqIndex(node_id), { follow: false });
-      return `The camera is on "${labelOf(node_id)}" and a simple picture of it is appearing above it. Explain this part now.`;
+      const z = Number(zoom_level);
+      if (Number.isFinite(z) && z > 0) await api.canvas()?.focusNode(node_id, Math.max(1, Math.min(2.6, z)));
+      return `Done: the camera zoomed into "${labelOf(node_id)}"${Number.isFinite(z) && z > 0 ? ` at ${Math.max(1, Math.min(2.6, z))}x` : ""} and a simple picture of it is appearing above it. Explain this part now.`;
     },
     async show_overview() {
       await api.guided().overview();
@@ -230,6 +239,14 @@ export function createDirector(api) {
       setPaused(false);
       return "Visuals continue from where they stopped.";
     },
+    async pause_animation() {
+      setPaused(true);
+      return "Done: the animation is paused exactly where it is.";
+    },
+    async resume_animation() {
+      setPaused(false);
+      return "Done: the animation continues from where it stopped.";
+    },
 
     // ---- deterministic data structures ----
     async ds_start({ kind, items }) {
@@ -286,12 +303,12 @@ export function createDirector(api) {
     }
   };
 
-  Object.assign(commands, rv.commands);
+  Object.assign(commands, rv.commands, text.commands);
 
   const run = (name, args = {}) => {
     const fn = commands[name];
     if (!fn) return Promise.resolve(`Unknown visual command ${name}.`);
-    if (name === "pause_visuals" || name === "resume_visuals") return fn(args);
+    if (PAUSE_NAMES.includes(name)) return fn(args);
     // Issuing a new visual command means the lesson continues.
     if (paused) setPaused(false);
     const my = epoch;
@@ -305,6 +322,10 @@ export function createDirector(api) {
         }
         // Adaptive pace: shorter transitions while commands are waiting.
         timing.scale = pending > 2 ? 0.5 : pending > 1 ? 0.7 : 1;
+        // Temporary replay speed for this one command ("show it again, slower").
+        timing.playback = args.speed !== undefined ? parseSpeed(args.speed) : 1;
+        if (timing.playback < 1) timing.scale = 1;
+        const limit = (TIMEOUT_MS + (Array.isArray(args.steps) ? args.steps.length * 2500 : 0)) / timing.playback;
         history.push({ name, args, at: Date.now(), scene: api.scene()?.scene_id });
         trace("cmd_started", { name });
         const t0 = performance.now();
@@ -313,7 +334,7 @@ export function createDirector(api) {
         const out = await Promise.race([
           fn(args).then((r) => ({ r })),
           new Promise((res) => {
-            timer = setTimeout(() => res({ timeout: true }), TIMEOUT_MS);
+            timer = setTimeout(() => res({ timeout: true }), limit);
           })
         ]).finally(() => clearTimeout(timer));
         if (out.timeout) {
@@ -331,8 +352,9 @@ export function createDirector(api) {
         trace("cmd_failed", { name });
         rv.state.restore?.();
         reconcile();
-        return "That visual could not run. Keep explaining in words.";
+        return `Not done: that visual failed (${String(err?.message || err).slice(0, 80)}). Tell the student it did not work and explain in words.`;
       } finally {
+        timing.playback = 1;
         pending -= 1;
         if (pending <= 0) {
           pending = 0;

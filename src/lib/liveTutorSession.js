@@ -62,6 +62,7 @@ export const MOVE_NODE_TOOL = {
 };
 
 const idParam = (d) => ({ type: "string", description: d });
+const SPEED = { type: "string", enum: ["normal", "slower", "very_slow"], description: "Visual speed for this replay: slower = 0.65x, very_slow = 0.4x" };
 const tool = (name, description, properties = {}, required = []) => ({
   type: "function",
   name,
@@ -71,7 +72,12 @@ const tool = (name, description, properties = {}, required = []) => ({
 
 // Visual commands the professor uses to direct the animated diagram.
 export const DIRECTOR_TOOLS = [
-  tool("focus_node", "Zoom the camera into one part of the diagram and show its simple picture above it.", { node_id: idParam("Part id from the diagram list") }, ["node_id"]),
+  tool(
+    "focus_node",
+    "Zoom the camera into one part of the diagram and show its simple picture above it. Use it whenever the student asks you to zoom in on something.",
+    { node_id: idParam("Part id from the diagram list"), zoom_level: { type: "number", description: "Optional zoom, 1 to 2.6 (default about 1.7)" } },
+    ["node_id"]
+  ),
   tool("show_overview", "Zoom out to show the complete diagram."),
   tool("highlight_node", "Pulse one part to point at the concept you are naming.", { node_id: idParam("Part id") }, ["node_id"]),
   tool("follow_connection", "Move the camera along the arrow from one part to the next.", { from_id: idParam("Source part id"), to_id: idParam("Destination part id") }, ["from_id", "to_id"]),
@@ -95,8 +101,8 @@ export const DIRECTOR_TOOLS = [
     ["node_id", "props"]
   ),
   tool("play_step", "Play one numbered teaching step of the diagram (starting at 1). The camera follows it. The result arrives when it has finished.", { step_id: { type: "number", description: "Step number, starting at 1" } }, ["step_id"]),
-  tool("pause_visuals", "Freeze the animation exactly where it is."),
-  tool("resume_visuals", "Continue the animation from where it was frozen."),
+  tool("pause_animation", "Freeze the animation exactly where it is."),
+  tool("resume_animation", "Continue the animation from where it was frozen."),
   tool(
     "ds_start",
     "Put a real data-structure diagram on screen (queue or stack). Use it when the student asks about a queue or stack, or asks to switch to the other one.",
@@ -121,21 +127,21 @@ export const DIRECTOR_TOOLS = [
   tool(
     "revisit_node",
     "Take the camera back to a part already taught, restore its picture and replay its earlier animation. Use when the student asks to go back to something (for example 'go back to the attacker').",
-    { node_id: idParam("Part id"), replay: { type: "boolean", description: "Replay its earlier animation (default true); false to only focus" } },
+    { node_id: idParam("Part id"), replay: { type: "boolean", description: "Replay its earlier animation (default true); false to only focus" }, speed: SPEED },
     ["node_id"]
   ),
   tool(
     "replay_step",
     "Replay one earlier teaching step visually (a step number such as 2, or an id from the history such as step_2). Does not advance the lesson.",
-    { step_id: idParam("Step number or history id") },
+    { step_id: idParam("Step number or history id"), speed: SPEED },
     ["step_id"]
   ),
   tool(
     "replay_example",
-    "Replay an earlier example from its RECORDED state (for example the last enqueue/dequeue), then restore the real state. Omit example_id for the most recent example. The data is never changed by a replay.",
-    { example_id: idParam("History id such as op_2; omit for the latest example") }
+    "Replay an earlier example (operation, value transfer, equation steps, SQL highlight) from its RECORDED state, then restore the real state. Omit example_id for the most recent example. The data is never changed by a replay.",
+    { example_id: idParam("History id such as op_2 or transform_equation_1; omit for the latest example"), speed: SPEED }
   ),
-  tool("trace_previous_transition", "Zoom out to show how the focused part was reached and replay the value moving along the connecting arrow. Use for 'how did we get here?' and 'where did that come from?'."),
+  tool("trace_previous_transition", "Zoom out to show how the focused part was reached and replay the value moving along the connecting arrow. Use for 'how did we get here?' and 'where did that come from?'.", { speed: SPEED }),
   tool(
     "explain_state_change",
     "Replay how a part's contents changed, from the recorded before state to the after state, and get the exact change. Use for 'why did the value change?'.",
@@ -148,17 +154,62 @@ export const DIRECTOR_TOOLS = [
     ["before_step_id", "after_step_id"]
   ),
   tool("return_to_previous_focus", "Move the camera back to where the lesson was before the review detour."),
-  tool("resume_original_teaching_path", "End the review and continue the original lesson: restores the real state, moves the camera to the right next part, and tells you the next step. Completed operations never run again.")
+  tool("resume_original_teaching_path", "End the review and continue the original lesson: restores the real state, moves the camera to the right next part, and tells you the next step. Completed operations never run again."),
+
+  // The ACTUAL information as native text on the diagram (never images).
+  tool(
+    "show_text",
+    "Put exact text on the diagram: a SQL query, a code line, an equation, a variable and its value, an array cell or a token. Characters are kept exactly. Reusing an id replaces that text.",
+    {
+      id: idParam("Short id, lowercase letters, digits or _ (for example sql_query, eq1, var_i)"),
+      kind: { type: "string", enum: ["text_label", "code_block", "math_expression", "variable_value", "array_cell", "expression_token"] },
+      content: idParam("The exact text. Use \\n for new lines. For math you may write x^2 and +-"),
+      near_id: idParam("Optional part id to place it under")
+    },
+    ["id", "kind", "content"]
+  ),
+  tool("hide_text", "Remove a text object from the diagram.", { id: idParam("Text id") }, ["id"]),
+  tool("update_text", "Change the content of a text object on screen (for example i = 0 becomes i = 1).", { id: idParam("Text id"), content: idParam("New exact text") }, ["id", "content"]),
+  tool(
+    "highlight_token",
+    "Highlight an exact part of a text object while you name it (for example OR 1=1 inside the SQL query, or x > 5 inside an if). The token must appear in the text.",
+    { id: idParam("Text id"), token: idParam("Exact substring to highlight") },
+    ["id", "token"]
+  ),
+  tool(
+    "move_value",
+    "Move an exact value (for example 3 or OR 1=1) as readable text along the arrow from one part or text into another. An array_cell destination then shows it. Not for queue/stack boxes: use ds_operation.",
+    { value: idParam("Exact value to move"), from_id: idParam("Source id"), to_id: idParam("Destination id") },
+    ["value", "from_id", "to_id"]
+  ),
+  tool("replace_expression", "Replace an expression on screen with the next one, showing the old one before it changes.", { id: idParam("Text id"), content: idParam("New expression") }, ["id", "content"]),
+  tool(
+    "transform_equation",
+    "Show a worked equation step by step in one math box (for example x^2 - 4 = 0, x^2 = 4, x = +-2). The app checks that each step still holds for the final answer and refuses invalid steps.",
+    {
+      id: idParam("Equation id, for example eq1"),
+      steps: {
+        type: "array",
+        description: "2 to 6 steps in order",
+        items: { type: "object", properties: { expression: { type: "string" }, explanation: { type: "string" } }, required: ["expression"] }
+      },
+      near_id: idParam("Optional part id to place it under")
+    },
+    ["id", "steps"]
+  )
 ];
 
 // Added to the tutor instructions: the professor directs the camera.
 export const DIRECTOR_RULES = `
 DIRECTING THE ANIMATED DIAGRAM (when show_segment(0) lists the diagram's parts, these rules replace steps 1-3 above):
+- YOU REALLY CONTROL THE CAMERA AND ANIMATION through your functions. Never say you cannot zoom, move the camera, replay or slow down, and never tell the student to click anything. "Zoom in on the attacker" -> focus_node(attacker id). "Show the whole thing" -> show_overview. Every result tells you whether it worked. If a result starts with "Not done" or reports a problem, tell the student the real problem in one short sentence; never pretend it happened.
+- SLOWER: when the student asks to see something again more slowly, replay it with speed "slower" (or "very_slow" for a careful walkthrough) using replay_step, replay_example, revisit_node or trace_previous_transition, and explain deliberately while it plays. Your own voice stays natural.
+- SHOW THE ACTUAL INFORMATION, not only shapes. When you discuss a SQL query, code, an equation, a variable or a value, put it on screen with show_text (code_block for SQL/code, math_expression for equations, variable_value for "i = 0", array_cell for one value) and point at the exact part with highlight_token while you name it (for example highlight "OR 1=1" in SELECT * FROM users WHERE id = 1 OR 1=1;). Move exact values with move_value. Solve equations with transform_equation (each step valid; the app refuses wrong steps). Your words and the screen must show the SAME example and the same numbers. Wait for each result before moving to the next operation.
 - You are the director. The student never clicks anything. Narrate in one short sentence what is about to happen, THEN call the visual command, so speech and animation run together.
 - Start: call show_segment(0). It shows the whole diagram, zooms the camera into the first part and lists part ids and numbered steps. Give the one short metaphor it provides (first part only), then explain that part.
 - Then move through the lesson with play_step(1), play_step(2), and so on. Use animate_transfer to send a value along an arrow, update_node_state right after it arrives to show what changed in the destination (and in the source if it changes), follow_connection or focus_node to move attention, show_overview to step back, highlight_node to point at something.
 - Every tool result tells you the visual has FINISHED. Then explain why the state changed. Only use part ids from the list. Never describe something that has not appeared yet.
-- If the student interrupts, answer them directly and calmly. The picture stays exactly as it is. Continue from the current state; never restart or repeat earlier steps. Call resume_visuals only if you paused the visuals yourself.
+- If the student interrupts, answer them directly and calmly. The picture stays exactly as it is. Continue from the current state; never restart or repeat earlier steps. Call resume_animation only if you paused it yourself (pause_animation).
 - Pace: the visuals keep up with you. Start a visual command in the same breath as the sentence about it; never describe three parts ahead of the picture. Each tool result says the visual has finished.
 
 DATA STRUCTURES (queue, stack): you CHOOSE and EXPLAIN operations; the app EXECUTES them. Never invent a result.

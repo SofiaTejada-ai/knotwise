@@ -166,6 +166,23 @@ export function useAnimationTutor() {
     setScene(next);
   }, []);
 
+  // Native text objects (code, math, values) added or removed during teaching.
+  const addObject = useCallback((obj) => {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    const next = { ...sc, objects: [...(sc.objects ?? []).filter((o) => o.id !== obj.id), obj] };
+    sceneRef.current = next;
+    setScene(next);
+  }, []);
+
+  const removeObject = useCallback((id) => {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    const next = { ...sc, objects: (sc.objects ?? []).filter((o) => o.id !== id) };
+    sceneRef.current = next;
+    setScene(next);
+  }, []);
+
   const getScene = useCallback(() => sceneRef.current, []);
 
   const reset = useCallback(() => {
@@ -205,6 +222,8 @@ export function useAnimationTutor() {
     prevStep,
     moveNode,
     updateObject,
+    addObject,
+    removeObject,
     reset
   };
 }

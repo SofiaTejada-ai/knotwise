@@ -1,4 +1,5 @@
 import React from "react";
+import TextObject from "./TextObject";
 
 export const MONO = "JetBrains Mono, ui-monospace, monospace";
 export const UI = "Inter, ui-sans-serif, system-ui, sans-serif";

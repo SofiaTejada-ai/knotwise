@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react
 import gsap from "gsap";
 import { SceneObject, labelOffset, wrapLines, MONO } from "./SceneObjects";
 
-import { scaled } from "@/lib/animTiming";
+import { scaled, DUR } from "@/lib/animTiming";
 import { trace } from "@/lib/lessonTrace";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -213,7 +213,7 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
       if (!p) return Promise.resolve();
       camSeq.current += 1;
       const v = viewFor(p, z);
-      return camTo(v.x, v.y, z, 0.8);
+      return camTo(v.x, v.y, z, DUR.camera);
     };
     return {
       showOverview: () => {
@@ -251,8 +251,8 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           gsap
             .timeline({ onComplete: res })
             .set(node, { attr: { filter: "url(#pulseGlow)" } })
-            .to(node, { scale: 1.3, ...o, duration: reduced() ? 0 : scaled(0.3), ease: "power2.out" })
-            .to(node, { scale: 1, ...o, duration: reduced() ? 0 : scaled(0.3), ease: "power2.in" })
+            .to(node, { scale: 1.3, ...o, duration: reduced() ? 0 : scaled(DUR.highlight / 2), ease: "power2.out" })
+            .to(node, { scale: 1, ...o, duration: reduced() ? 0 : scaled(DUR.highlight / 2), ease: "power2.in" })
             .set(node, { attr: { filter: "" } });
         }),
       // A labelled value leaves the source, travels along a growing arrow and
@@ -263,15 +263,17 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           const B = nodePos(b);
           const layer = travelRef.current;
           if (!A || !B || !layer) return res();
-          const dur = reduced() ? 0 : scaled(1.2);
+          const dur = reduced() ? 0 : scaled(DUR.transfer);
           const line = el("line", { x1: A.x, y1: A.y, x2: A.x, y2: A.y, stroke: color, "stroke-width": 3, opacity: 0.9 });
+          // The exact value travels as a readable pill (e.g. "3", "OR 1=1").
+          const label = String(value ?? "").slice(0, 24);
+          const pw = Math.max(26, label.length * 9.6 + 18);
           const tok = el("g");
-          tok.appendChild(el("circle", { r: 11, fill: color, filter: "url(#packetGlow)" }));
+          tok.appendChild(el("rect", { x: -pw / 2, y: -15, width: pw, height: 30, rx: 15, fill: color, filter: "url(#packetGlow)" }));
           const t = el("text", {
-            y: -18, "text-anchor": "middle", "font-size": 13, "font-weight": 700, "font-family": MONO,
-            fill: "#0f172a", stroke: "#ffffff", "stroke-width": 4, "paint-order": "stroke"
+            y: 6, "text-anchor": "middle", "font-size": 16, "font-weight": 700, "font-family": MONO, fill: "#ffffff"
           });
-          t.textContent = String(value ?? "").slice(0, 24);
+          t.textContent = label;
           tok.appendChild(t);
           layer.appendChild(line);
           layer.appendChild(tok);
@@ -291,11 +293,11 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           };
           gsap
             .timeline({ onComplete: cleanup })
-            .to(tok, { scale: 1, duration: reduced() ? 0 : 0.25, ease: "back.out(2)" })
+            .to(tok, { scale: 1, duration: reduced() ? 0 : scaled(0.3), ease: "back.out(2)" })
             .to(tok, { x: B.x, y: B.y, duration: dur, ease: "power1.inOut" }, ">")
             .to(line, { attr: { x2: B.x, y2: B.y }, duration: dur, ease: "power1.inOut" }, "<")
-            .to(head, { opacity: 1, duration: 0.2 }, "-=0.3")
-            .to(tok, { scale: 0.2, opacity: 0, duration: reduced() ? 0 : 0.25, ease: "power2.in" });
+            .to(head, { opacity: 1, duration: reduced() ? 0 : scaled(DUR.arrow) }, `-=${reduced() ? 0 : scaled(DUR.arrow)}`)
+            .to(tok, { scale: 0.2, opacity: 0, duration: reduced() ? 0 : scaled(DUR.enter), ease: "power2.in" });
         }),
       setPaused: (p) => (p ? gsap.globalTimeline.pause() : gsap.globalTimeline.resume()),
       getView: () => ({ ...cam.current }),
