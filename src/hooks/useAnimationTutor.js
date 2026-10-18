@@ -105,6 +105,28 @@ export function useAnimationTutor() {
     }
   }, []);
 
+  // Builds a complete scene without touching the current one or playing it.
+  const buildScene = useCallback(async (prompt, groundingText) => {
+    const res = await base44.functions.invoke("callTutor", {
+      prompt,
+      currentScene: null,
+      history: [],
+      approvedSources: APPROVED_SOURCES,
+      groundingText
+    });
+    const sc = (res?.data ?? res)?.scene;
+    if (!sc || sc.delta === true || !sc.objects?.length || !sc.sequence?.length) throw new Error("no scene");
+    return sc;
+  }, []);
+
+  // Puts a ready scene on the canvas (or clears it) without playing a step.
+  const loadScene = useCallback((sc) => {
+    sceneRef.current = sc || null;
+    setScene(sc || null);
+    setStartStep(0);
+    setCurrentStep(0);
+  }, []);
+
   const goToStep = useCallback((i) => {
     const sc = sceneRef.current;
     if (!sc || !Array.isArray(sc.sequence) || sc.sequence.length === 0) return;
@@ -174,6 +196,8 @@ export function useAnimationTutor() {
     canvasRef,
     getScene,
     sendMessage,
+    buildScene,
+    loadScene,
     goToStep,
     replay,
     replayStep,

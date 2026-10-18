@@ -18,6 +18,7 @@ export default function LessonScene({
   visual, // { nodes, edges } diagram for the topic, or null while drawing
   steps, // steps of the topic (null while drawing)
   stepIndex,
+  stage, // optional animated scene element; replaces the simple diagram
   onNodeClick,
   captionsOn,
   captionText,
@@ -58,7 +59,8 @@ export default function LessonScene({
 
       {/* the stage: one focus at a time */}
       <div className="flex flex-1 items-center justify-center px-6 pb-28 pt-16">
-        {mode !== "quiz" && (
+        {stage && <div className={mode === "quiz" ? "hidden" : "w-full max-w-5xl"}>{stage}</div>}
+        {!stage && mode !== "quiz" && (
           <AnimatePresence mode="wait">
             <motion.div
               key={visual ? "diagram" : "wait"}

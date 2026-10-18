@@ -18,16 +18,14 @@ export default async function (req: Request) {
     const first = body.first === true;
 
     const imagePrompt = [
-      `Create an accurate, technically correct educational illustration of the REAL subject: "${nodeLabel}"${nodeType ? ` (${nodeType})` : ''}`,
-      sceneTitle ? `within the topic "${sceneTitle}".` : '.',
-      detail ? `Context: ${detail}.` : '',
-      question ? `The student asked: ${question}.` : '',
-      'Show the actual mechanism, structure, system or data involved (for software: real components, code or query structure, data flow; for biology: real anatomy, cells or structures; for math: the actual graph or equation; for physics: the actual forces or system).',
-      'Do NOT draw a metaphor, cartoon objects, locks, keys, filing cabinets or symbolic stand-ins.',
-      'Style: clean labeled technical diagram, light background, a few short readable labels at most, wide landscape composition, nothing scary.'
-    ]
-      .filter(Boolean)
-      .join(' ');
+      `Create a clean, visually appealing educational illustration depicting "${nodeLabel}"${nodeType ? ` (a ${nodeType})` : ''}${detail ? `, where the current action is: ${detail.slice(0, 120)}` : ''}, in the context of ${sceneTitle || question || 'the lesson'}.`,
+      'Show one clear primary subject or action.',
+      'Use a straightforward, recognizable depiction of the real subject, for example a person at a computer for a user or attacker, a server rack for a server, a database cylinder with stored records for a database.',
+      'Do not create an infographic, diagram, flowchart, presentation slide, collage, or multi-panel illustration.',
+      'Do not include large headings, paragraphs, arrows, code blocks, tables, or dense labels. Use no text at all unless one or two words are essential.',
+      'Keep the composition simple and readable at a glance: modern clean illustration, minimal light background, wide landscape framing, friendly and not scary.',
+      'The image will appear above an existing interactive technical diagram, so it should supplement the diagram rather than duplicate it. Do not make it a metaphor.'
+    ].join(' ');
 
     const imageP = base44.asServiceRole.integrations.Core.GenerateImage({ prompt: imagePrompt });
     const metaP = first

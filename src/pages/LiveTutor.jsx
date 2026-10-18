@@ -18,6 +18,21 @@ import {
   profileContext
 } from "@/lib/liveTutorSession";
 import { useLessonOrchestrator } from "@/hooks/useLessonOrchestrator";
+import { useAnimationTutor } from "@/hooks/useAnimationTutor";
+import { useGuidedLesson } from "@/hooks/useGuidedLesson";
+import LiveSceneStage from "@/components/livetutor/LiveSceneStage";
+
+// Animated-scene steps become the professor's spoken segments.
+function sceneToSegments(scene) {
+  const segs = (scene.sequence ?? []).map((s) => ({
+    idea: s.description || s.action,
+    spokenText: s.description || s.action,
+    nodes: [],
+    edges: []
+  }));
+  segs.scene = scene;
+  return segs;
+}
 import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL];
@@ -80,6 +95,38 @@ export default function LiveTutor() {
     profileRef.current = profile;
   }, [profile]);
 
+  // Animated scene (SVG + GSAP + camera). It is driven by the one voice
+  // professor above through show_segment, never by a second conversation.
+  const tutor = useAnimationTutor();
+  const tutorRef = useRef(tutor);
+  tutorRef.current = tutor;
+  const animRef = useRef(false);
+  animRef.current = tutor.isAnimating;
+  const canvasRef = useRef(null);
+  const moveTimerRef = useRef(null);
+  const guidedStatus =
+    phase === "teaching" && sceneMode === "present" && segIndex != null
+      ? voice.status === "listening"
+        ? "paused"
+        : "speaking"
+      : "idle";
+  const guided = useGuidedLesson({
+    canvasRef,
+    scene: tutor.scene,
+    lessonStatus: guidedStatus,
+    stepIdx: segIndex ?? -1,
+    question: questionRef.current
+  });
+  const guidedRef = useRef(guided);
+  guidedRef.current = guided;
+
+  const waitIdle = (ms) =>
+    new Promise((res) => {
+      const t0 = Date.now();
+      const tick = () => (!animRef.current || Date.now() - t0 > ms ? res() : setTimeout(tick, 150));
+      tick();
+    });
+
   const buildMap = async (question) => {
     const p = profileRef.current;
     const res = await base44.functions.invoke("buildTopicMap", {
@@ -104,6 +151,17 @@ export default function LiveTutor() {
   // technical diagram. Never blocks the professor.
   const fetchSegments = async (node, question) => {
     const topicText = `${node.label} ${node.description ?? ""} ${question ?? ""}`;
+    // Preferred: a complete animated scene. If it cannot be built, fall back
+    // to the simple technical diagram below.
+    try {
+      const prompt =
+        node.id === "opening"
+          ? question
+          : `${node.label}: ${node.description ?? ""}. Part of a lesson about: ${mapRef.current?.title || question}`;
+      return sceneToSegments(await tutorRef.current.buildScene(prompt));
+    } catch (err) {
+      // continue with the simple diagram
+    }
     const res = await base44.functions.invoke("buildNodePresentation", {
       nodeLabel: node.label,
       nodeDescription: node.description ?? "",
@@ -116,7 +174,8 @@ export default function LiveTutor() {
   const applyPresentation = (segs) => {
     presentationRef.current = segs;
     setPresentation(segs);
-    orch.setVisual(segs?.visual?.source ?? "none", { source: segs?.visual?.source, steps: segs?.length ?? 0 });
+    tutorRef.current.loadScene(segs?.scene ?? null);
+    orch.setVisual(segs?.scene ? "animated_scene" : segs?.visual?.source ?? "none", { source: segs?.visual?.source, steps: segs?.length ?? 0 });
   };
 
   // Starts (or reuses) the diagram request for a topic. When it lands and that
@@ -154,6 +213,7 @@ export default function LiveTutor() {
     topicKeyRef.current = node.id;
     orch.setTopic(node.label, node.description);
     const cached = segCacheRef.current[node.id];
+    tutorRef.current.loadScene(cached?.scene ?? null);
     setPresentation(cached ?? null);
     presentationRef.current = cached ?? null;
     setSegIndex(null);
@@ -177,9 +237,9 @@ export default function LiveTutor() {
     setPhase("teaching");
     buildingRef.current = true;
     setBuildingMap(true);
+    tutorRef.current.reset();
     loadTopicVisual("opening", { id: "opening", label: question.slice(0, 80), description: question }, {
-      question,
-      allowTemplate: true
+      question
     });
     buildMap(question)
       .then((m) => {
@@ -352,7 +412,7 @@ export default function LiveTutor() {
         // has already been speaking, and never stalls on it.
         const key = topicKeyRef.current;
         const pending = visualPromisesRef.current[key];
-        segs = pending ? await Promise.race([pending, new Promise((r) => setTimeout(() => r(null), 3500))]) : null;
+        segs = pending ? await Promise.race([pending, new Promise((r) => setTimeout(() => r(null), 5000))]) : null;
         if (!segs || key !== topicKeyRef.current) {
           voice.sendFunctionCallOutput(
             call_id,
@@ -364,6 +424,8 @@ export default function LiveTutor() {
       }
       const i = Math.min(Math.max(Number(args?.segment_index) || 0, 0), Math.max(segs.length - 1, 0));
       const seg = segs[i];
+      // Let the previous step's animation finish before the next one starts.
+      if (segs.scene && i > 0) await waitIdle(7000);
       setSegIndex(i);
       setSceneMode("present");
       orch.setStep(i, { nodes: seg?.nodes ?? [], edges: seg?.edges ?? [] });
@@ -372,6 +434,26 @@ export default function LiveTutor() {
         return;
       }
       const last = i === segs.length - 1;
+      if (segs.scene) {
+        tutorRef.current.goToStep(i);
+        let first = "";
+        if (i === 0) {
+          const parts = (segs.scene.objects ?? []).filter((o) => o.type !== "note").map((o) => o.label).join(", ");
+          const meta = await guidedRef.current.getIntro(2500);
+          first = `The whole diagram is on screen with these parts: ${parts}. ${
+            meta ? `Before the explanation, give this one short everyday metaphor in your own words: "${meta}". ` : ""
+          }`;
+        }
+        voice.sendFunctionCallOutput(
+          call_id,
+          `Animated diagram step ${i + 1} of ${segs.length} is playing now and the camera is moving to it: ${seg.spokenText} ${first}Explain this step aloud in two short, accurate sentences in your own calm voice, naming the part on screen. ${
+            last
+              ? 'Then ask: "Does that make sense?" and wait. Do not call any function yet.'
+              : `As you finish speaking, call show_segment(${i + 1}). Steady pace, no questions.`
+          }`
+        );
+        return;
+      }
       if (seg.spokenText) {
         voice.sendFunctionCallOutput(
           call_id,
@@ -482,6 +564,7 @@ export default function LiveTutor() {
     nudgedRef.current = false;
     segCacheRef.current = {};
     prefetchingRef.current = {};
+    tutorRef.current.reset();
 
     const question = (typedQuestion ?? "").trim();
     if (question) {
@@ -534,6 +617,7 @@ export default function LiveTutor() {
   const endSession = () => {
     voice.stop();
     orch.reset();
+    tutor.reset();
     setPhase("home");
     setMap(null);
     mapRef.current = null;
@@ -567,6 +651,7 @@ export default function LiveTutor() {
   const askNewQuestion = () => {
     const p = profileRef.current;
     orch.reset();
+    tutor.reset();
     segCacheRef.current = {};
     prefetchingRef.current = {};
     visualPromisesRef.current = {};
@@ -684,10 +769,36 @@ export default function LiveTutor() {
   }
 
   const activeNode = map?.nodes.find((n) => n.id === activeNodeId);
-  const segment = presentation && segIndex != null ? presentation[segIndex] : null;
+  // Student moves a piece: the professor reacts once things settle.
+  const handleMove = (id, x, y) => {
+    const label = (tutor.scene?.objects ?? []).find((o) => o.id === id)?.label || id;
+    tutor.moveNode(id, x, y);
+    clearTimeout(moveTimerRef.current);
+    moveTimerRef.current = setTimeout(() => {
+      orch.noteInteraction("diagram_move", label);
+      voice.tellTutor(
+        `(The student dragged "${label}" to a new place on the diagram. React in one short sentence and continue where you left off.)`
+      );
+    }, 1500);
+  };
+  const handleSelect = (id) => {
+    guided.selectNode(id);
+    const label = (tutor.scene?.objects ?? []).find((o) => o.id === id)?.label;
+    if (label) handleNodeClick({ label });
+  };
+  const stage = tutor.scene ? (
+    <LiveSceneStage
+      tutor={tutor}
+      canvasRef={canvasRef}
+      guided={guided}
+      onMoveNode={handleMove}
+      onSelectNode={handleSelect}
+    />
+  ) : null;
 
   return (
     <LessonScene
+      stage={stage}
       node={activeNode}
       mode={sceneMode}
       visual={presentation?.visual ?? null}

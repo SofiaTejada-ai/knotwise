@@ -162,7 +162,7 @@ export function useGuidedLesson({ canvasRef, scene, lessonStatus, stepIdx, quest
 
   // Explicit teaching-step events drive the camera.
   useEffect(() => {
-    if (!state.guidedModeEnabled || stepIdx < 0 || lessonStatus !== "speaking") return;
+    if (!state.guidedModeEnabled || stepIdx < 0 || lessonStatus === "idle" || lessonStatus === "done") return;
     const node = nodeSeq[stepIdx];
     if (!node) return;
     const prev = focusedRef.current;
