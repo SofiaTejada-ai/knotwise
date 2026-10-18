@@ -1,5 +1,5 @@
 // Realtime session tools and tutor instructions for cyber8LiveTutor.
-import { detectKind, defaultExampleText, requestedValue, DEFAULT_EXAMPLE } from "@/lib/dsEngine";
+import { detectKind, requestedValue } from "@/lib/dsEngine";
 // The lesson is one immersive scene: the tutor presents each topic segment by
 // segment, and every spoken segment has its own matching picture that the
 // tutor puts on screen exactly when it reaches that idea.
@@ -107,13 +107,13 @@ export const DIRECTOR_TOOLS = [
   tool(
     "ds_start",
     "Put a real data-structure diagram on screen (queue or stack). Use it when the student asks about a queue or stack, or asks to switch to the other one.",
-    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "number" }, description: "Optional starting values; default 10, 20, 30" } },
+    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "string" }, description: "Starting values you chose: numbers or short words up to 12 characters (stack bottom to top, queue front to rear)" }, title: { type: "string", description: "Short name of your example story, shown on the diagram (for example Browser history)" } },
     ["kind"]
   ),
   tool(
     "ds_operation",
     "Run a real operation on the data structure on screen. The app computes the true result, animates the value and returns the real before/after state. enqueue/push need a value.",
-    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "number", description: "Value for enqueue or push" } },
+    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "string", description: "Value for enqueue or push: a number or a short word you chose" } },
     ["op"]
   ),
   tool(
@@ -126,20 +126,20 @@ export const DIRECTOR_TOOLS = [
   // The ONE shared example (voice and diagram). Same engine as ds_*.
   tool(
     "create_example",
-    "Establish a NEW example on screen BEFORE you say its numbers (for example a stack [5, 9], or a queue with the current values). Replaces the previous example. kind defaults to the current structure.",
-    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "number" }, description: "Starting values; stack bottom to top, queue front to rear" } },
+    "Put YOUR OWN new example on screen BEFORE you say its values: a story and starting values you invented (for example browser pages home, news, video). Replaces the previous example. kind defaults to the current structure.",
+    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "string" }, description: "Starting values you chose: numbers or short words up to 12 characters (stack bottom to top, queue front to rear)" }, title: { type: "string", description: "Short name of your example story, shown on the diagram (for example Browser history)" } },
     ["items"]
   ),
   tool(
     "set_example_values",
     "Start over with different values in the same structure (a what-if from the start). Replaces the current example.",
-    { items: { type: "array", items: { type: "number" }, description: "New starting values" } },
+    { items: { type: "array", items: { type: "string" }, description: "Starting values you chose: numbers or short words up to 12 characters (stack bottom to top, queue front to rear)" }, title: { type: "string", description: "Short name of your example story, shown on the diagram (for example Browser history)" } },
     ["items"]
   ),
   tool(
     "perform_operation",
     "Execute one real operation on the active example. The app computes the result, animates the exact value and returns the real before/after. Explain only from that result.",
-    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "number", description: "Value for enqueue or push" } },
+    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "string", description: "Value for enqueue or push: a number or a short word you chose" } },
     ["op"]
   ),
   tool(
@@ -284,9 +284,11 @@ DATA STRUCTURES (queue, stack): you CHOOSE and EXPLAIN operations; the app EXECU
 - "What about a stack?": call ds_start with kind stack, contrast LIFO with FIFO, then run push and pop and point out that the newest value leaves first.
 - Never state contents that the latest tool result does not show. If unsure, call ds_state.
 
+YOU INVENT THE EXAMPLES: there are no built-in examples. Make up your own for this student: a real-world story (browser back button, undo in an editor, a pile of plates, a printer queue, a ticket line, a call center, a playlist...) and your own values, which may be numbers or short words. Every new example must differ from the earlier ones. The app only computes what each operation does, so results are always correct.
+
 ONE SHARED EXAMPLE (the most important rule): your words and the diagram use the SAME example, the ACTIVE EXAMPLE named in tool results.
 - Never say a number that is not in the active example. Never describe an operation before its tool result arrives; you may say "let us push 12" and call perform_operation in the same breath, then describe the result.
-- "Another example" / "different numbers": choose new values, call create_example with them FIRST, then teach and demonstrate with perform_operation.
+- "Another example" / "different numbers": invent a new story and values, call create_example with them (and a short title) FIRST, then teach and demonstrate with perform_operation.
 - "Push 42" / "what if we push 100": if it continues the current example, call perform_operation with that value. If it is clearly a fresh what-if from the start, call set_example_values first. If you truly cannot tell, ask one short question.
 - "Show that again (slowly)": animate_operation with speed "slower". Never perform the operation again.
 - "A different example, but slower": create_example, then perform_operation, then animate_operation with speed "slower" if they want to see it again.
@@ -297,7 +299,7 @@ EXPANDING ON THE STUDENT'S IDEAS (the board grows with the conversation):
 - If showing it on the board would really help, OFFER and wait: for example "Would you like me to add that to the diagram, with an example of a busy web shop sending orders?" Do not change the diagram before they answer.
 - If they say yes, or they already asked you to show, draw, expand or give an example of their idea, call expand_diagram with student_consented true: 1 to 4 new real parts and 1 to 5 steps showing what actually travels between them. Connect to existing part ids when it fits; put old parts that no longer matter in remove_ids when the board is crowded.
 - Never set student_consented true unless the student agreed or asked. If they say no, keep explaining in words.
-- After the result arrives, point at the new parts, then play the new steps one at a time with play_step, explaining after each. For queue or stack values use create_example instead.
+- After the result arrives, point at the new parts, then play the new steps one at a time with play_step, explaining after each. The contents of a queue or stack box always come from create_example and perform_operation, but you may use expand_diagram to draw your story around it (for example a User and a Browser next to a back-button stack).
 
 GOING BACK AND REVISITING (the student speaks naturally and never names parts, steps or buttons; YOU decide where to point):
 - Interpret what the student means in context, then choose the command. If unsure what they refer to, call get_teaching_history. Say one short sentence ("Sure, let's go back to the attacker"), then call the command.
@@ -360,7 +362,9 @@ export function streamingInstructions(question, profile) {
 
 RIGHT NOW: the student asked "${question}".${
     detectKind(question)
-      ? ` The diagram shows this ACTIVE EXAMPLE: ${defaultExampleText(detectKind(question), requestedValue(question) ?? DEFAULT_EXAMPLE.value)} Use exactly these numbers and no others; demonstrate with perform_operation once the steps arrive.`
+      ? ` The board shows an EMPTY ${detectKind(question)}. Invent your own example: a real-world story and starting values that fit this student${
+          requestedValue(question) !== undefined ? ` (they mentioned ${requestedValue(question)}: use it in your demonstration)` : ""
+        }. Call create_example with them BEFORE you say any value, then demonstrate with perform_operation.`
       : ""
   } Start explaining immediately in your own plain words; the diagram is being drawn alongside you and the detailed steps arrive in a moment. If the student speaks, answer conversationally and never mention preparing anything.`;
 }

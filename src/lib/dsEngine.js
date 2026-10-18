@@ -19,7 +19,12 @@ export function detectKind(text) {
   return null;
 }
 
-const clean = (v) => (typeof v === "number" ? v : String(v).trim().slice(0, 8));
+// Values are numbers or short words chosen by the professor ("home", "page3").
+const clean = (v) => {
+  if (typeof v === "number") return v;
+  const s = String(v).trim();
+  return s !== "" && Number.isFinite(Number(s)) ? Number(s) : s.slice(0, 12);
+};
 
 export function createStruct(kind, items = []) {
   if (!KINDS[kind]) throw new Error(`unsupported structure ${kind}`);
@@ -105,39 +110,32 @@ export function explainResult(r) {
   return `peek() read ${r.returned} at the ${kind === "queue" ? "front" : "top"} without removing it.`;
 }
 
-// The opening example. The professor's instructions quote these exact values,
-// so the first words and the first picture always agree.
-export const DEFAULT_EXAMPLE = { items: [3, 7], value: 12 };
-
 // The value the student asked to add ("pushing 73 onto a stack"), if any, so
-// the planned demo uses the student's number instead of the default.
+// the professor's own example can include the student's number.
 export function requestedValue(text) {
   const m = String(text ?? "").match(/\b(?:push|enqueue|add|insert)(?:ing|ed|es|s)?\b\D{0,20}?(-?\d+(?:\.\d+)?)/i);
   return m ? Number(m[1]) : undefined;
 }
 
-export const defaultExampleText = (kind, value = DEFAULT_EXAMPLE.value) =>
-  kind === "queue"
-    ? `Queue (front to rear): [3, 7]. Plan: enqueue(${value}), enqueue(${value === 25 ? 40 : 25}), peek(), dequeue(), dequeue().`
-    : `Stack (bottom to top): [3, 7]. Plan: push(${value}), push(${value === 25 ? 40 : 25}), peek(), pop(), pop().`;
-
+// There is no built-in example: the board starts empty (or with the values
+// the professor chose) and the professor invents every example. `title` is
+// the professor's story for it, shown on the structure ("Browser history").
 let counter = 0;
-export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
-  const start = items && items.length ? items : DEFAULT_EXAMPLE.items;
-  const struct = createStruct(kind, start);
+export function buildDsScene(kind, items, { title } = {}) {
+  const struct = createStruct(kind, Array.isArray(items) ? items : []);
   const q = kind === "queue";
   const id = `${kind}_${Date.now().toString(36)}_${counter++}`;
-  const second = value === 25 ? 40 : 25;
+  const name = String(title ?? "").trim().slice(0, 28) || (q ? "Queue" : "Stack");
   const objects = q
     ? [
         { id: "incoming", type: "plate", label: "enqueue at rear", x: 780, y: 275 },
-        { id: "struct", type: "queue", label: "Queue", x: 450, y: 275, items: displayItems(kind, struct.items) },
+        { id: "struct", type: "queue", label: name, x: 450, y: 275, items: displayItems(kind, struct.items) },
         { id: "outgoing", type: "plate", label: "dequeue at front", x: 120, y: 275 },
         { id: "status", type: "note", label: "Ready", x: 450, y: 385 }
       ]
     : [
         { id: "gate", type: "plate", label: "push / pop at top", x: 450, y: 80 },
-        { id: "struct", type: "stack", label: "Stack", x: 450, y: 300, items: displayItems(kind, struct.items) },
+        { id: "struct", type: "stack", label: name, x: 450, y: 300, items: displayItems(kind, struct.items) },
         { id: "status", type: "note", label: "Ready", x: 760, y: 300 }
       ];
   const rule = RULES[kind];
@@ -153,7 +151,7 @@ export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
       ];
   return {
     scene_id: id,
-    title: q ? "How a queue works" : "How a stack works",
+    title: title ? name : q ? "How a queue works" : "How a stack works",
     objects,
     sequence,
     ds: {
@@ -163,11 +161,7 @@ export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
       outId: q ? "outgoing" : "gate",
       statusId: "status",
       initial: [...struct.items],
-      // Long enough to teach the rule, not just show it: two adds, a read,
-      // then removals that reveal the order (and the second value leaving).
-      plan: q
-        ? [{ op: "enqueue", value }, { op: "enqueue", value: second }, { op: "peek" }, { op: "dequeue" }, { op: "dequeue" }]
-        : [{ op: "push", value }, { op: "push", value: second }, { op: "peek" }, { op: "pop" }, { op: "pop" }]
+      title: title ? name : null
     }
   };
 }
@@ -199,6 +193,8 @@ export function runSelfTests() {
   t("repeating the same op on the same state is pure (replay applies nothing twice)", same(again.after, d.after) && same(e.struct.items, [10, 20, 30, 40]));
   t("unsupported op is refused", applyOp(q, "push", 1).ok === false);
   t("reads the student's value", requestedValue("Show me how pushing 73 onto a stack works") === 73 && requestedValue("what is a stack") === undefined);
+  t("words and numeric strings are values", same(createStruct("stack", ["home", "42", " news "]).items, ["home", 42, "news"]));
+  t("starts empty without a built-in example", buildDsScene("stack").ds.initial.length === 0);
   t("detects queue and stack topics", detectKind("teach me how a queue works") === "queue" && detectKind("what about a stack instead") === "stack");
   return results;
 }

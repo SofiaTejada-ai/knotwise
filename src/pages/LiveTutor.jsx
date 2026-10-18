@@ -38,7 +38,7 @@ import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
 import { useAutoCamera } from "@/hooks/useAutoCamera";
-import { detectKind, buildDsScene, requestedValue } from "@/lib/dsEngine";
+import { detectKind, buildDsScene } from "@/lib/dsEngine";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
 
@@ -222,7 +222,8 @@ export default function LiveTutor() {
     // Queues and stacks use the deterministic engine, not a generated scene.
     const dsKind = detectKind(node.id === "opening" ? question : `${node.label} ${question ?? ""}`);
     if (dsKind) {
-      const sc = buildDsScene(dsKind, undefined, requestedValue(question));
+      // Starts empty: the professor invents the example with create_example.
+      const sc = buildDsScene(dsKind, []);
       // A later topic on the same structure continues the active example.
       sc.ds.carry = true;
       return sceneToSegments(sc);
@@ -548,7 +549,11 @@ export default function LiveTutor() {
           call_id,
           `The whole diagram was shown and the camera is now on "${(segs.scene.objects ?? []).find((o) => o.id === firstId)?.label || firstId}" with a simple picture above it. Diagram parts (id and label): ${parts}. ${dir.dsIntro()} Numbered steps: ${steps} ${
             meta ? `First give this one short everyday metaphor in your own words: "${meta}". ` : ""
-          }Then explain that first part slowly, like a teacher at the board, in two to four short sentences, then call play_step(1) and keep directing as your rules say.`
+          }Then explain that first part slowly, like a teacher at the board, in two to four short sentences, then ${
+            segs.scene.ds
+              ? "invent your own example and put it on the board with create_example before you say any value, then demonstrate it one operation at a time"
+              : "call play_step(1)"
+          } and keep directing as your rules say.`
         );
         return;
       }

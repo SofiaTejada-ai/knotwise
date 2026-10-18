@@ -308,14 +308,13 @@ export function createDirector(api) {
     },
 
     // ---- deterministic data structures ----
-    async ds_start({ kind, items }) {
+    async ds_start({ kind, items, title }) {
       kind = kind || getDs()?.meta.kind;
       if (!KINDS[kind]) return `Supported structures: ${Object.keys(KINDS).join(", ")}.`;
       const list = (Array.isArray(items) ? items : [])
         .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
-        .map((v) => (Number.isFinite(Number(v)) ? Number(v) : String(v)))
         .slice(0, 6);
-      const sc = buildDsScene(kind, list.length ? list : undefined);
+      const sc = buildDsScene(kind, list, { title });
       ds = null; // before the scene loads, so nothing carries the old example over
       api.loadScene(sc);
       await delay(150);
@@ -323,7 +322,7 @@ export function createDirector(api) {
       await api.guided().overview();
       await delay(600);
       await api.guided().travelTo(d.meta.structId, -1, { follow: false });
-      return `Done: a NEW example replaced the previous one. ${exampleHeader(d)}. The diagram shows exactly these values; use only them from now on. ${dsFacts(d)} Introduce it with one short everyday metaphor, explain the rule, then demonstrate with ds_operation (for example ${KINDS[kind].add} then ${KINDS[kind].remove}). Never state contents other than the ones given by tool results.`;
+      return `Done: your NEW example replaced the previous one${d.meta.title ? `: "${d.meta.title}"` : ""}. ${exampleHeader(d)}. The diagram shows exactly these values; use only them from now on. ${dsFacts(d)} Tell your story for this example, explain the rule, then demonstrate with operations YOU choose (${KINDS[kind].ops.join(", ")}), one at a time. Never state contents other than the ones given by tool results.`;
     },
     async ds_operation({ op, value }) {
       const d = getDs();
@@ -459,7 +458,11 @@ export function createDirector(api) {
   const dsIntro = () => {
     const d = getDs();
     return d
-      ? `${exampleHeader(d)}. Use exactly these values when you speak. ${dsFacts(d)} This is a REAL data structure. The professor chooses operations with ds_operation (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. Lesson plan, one operation at a time with an explanation after each: ${d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(", then ")}. After that, if the student is following, give a second example with new values (create_example) and connect it to an everyday ${d.meta.kind === "queue" ? "line of people waiting" : "stack of plates or an undo button"}.`
+      ? `${exampleHeader(d)}. ${dsFacts(d)} This is a REAL data structure: YOU invent the examples and choose the operations (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. ${
+          d.struct.items.length || d.ops.length
+            ? "Use exactly these values when you speak."
+            : "The board is EMPTY: invent your own example now (a real-world story and starting values that fit this student), call create_example with its items and a short title BEFORE you say any value, then demonstrate."
+        } Design the demonstration yourself: at least four operations, one at a time with an explanation after each, including removals that reveal the order and, when it fits, what happens on an empty structure. Afterwards, if the student is following, invent a different second example.`
       : "";
   };
 

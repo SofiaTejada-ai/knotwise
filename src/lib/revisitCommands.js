@@ -354,12 +354,11 @@ export function createRevisit(ctx) {
       if (nextNode && cur && nextNode !== cur) await api.guided().travelTo(nextNode, nextN - 1, { follow: true, from: cur, showDot: true });
       else if (cur) await goTo(cur);
       const d = getDs();
-      const plan = d ? d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(", ") : "";
       return `The lesson continues on its original path${wasRevisiting ? " after the review" : ""}. The picture shows the real current state. ${current()} ${
         hasNext
           ? `Everything up to step ${state.pos.stepN} is already done and will not run again. Next: call play_step(${nextN}).`
           : d
-            ? `All numbered steps are done. Operations already run: ${d.ops.length}. Continue with new operations only; never repeat one already completed (planned demo: ${plan}).`
+            ? `All numbered steps are done. Operations already run: ${d.ops.length}. Continue with new operations of your choice only; never repeat one already completed.`
             : `All steps are done. Check understanding, asking exactly: "Does that make sense?"`
       } Lesson events so far: ${hist.brief(id, labelOf, 5)}.`;
     },
