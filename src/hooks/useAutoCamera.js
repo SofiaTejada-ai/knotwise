@@ -27,8 +27,9 @@ export function useAutoCamera({ scene, active, director, firstNodeId, paused }) 
     })();
 
     const timer = setInterval(() => {
-      if (dead || pausedRef.current || director.isPaused()) return;
-      if (Date.now() - lastCmd() < 9000 || !director.history.length) return;
+      // Only hold off while the student is talking; a new command resumes visuals.
+      if (dead || pausedRef.current) return;
+      if (Date.now() - lastCmd() < 7000 || !director.history.length) return;
       const next = stepsPlayed() + 1;
       if (next <= total) director.run("play_step", { step_id: next });
     }, 3000);
