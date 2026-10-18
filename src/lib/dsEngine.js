@@ -105,9 +105,17 @@ export function explainResult(r) {
   return `peek() read ${r.returned} at the ${kind === "queue" ? "front" : "top"} without removing it.`;
 }
 
+// The opening example. The professor's instructions quote these exact values,
+// so the first words and the first picture always agree.
+export const DEFAULT_EXAMPLE = { items: [3, 7], value: 12 };
+export const defaultExampleText = (kind) =>
+  kind === "queue"
+    ? `Queue (front to rear): [3, 7]. Plan: enqueue(12) then dequeue().`
+    : `Stack (bottom to top): [3, 7]. Plan: push(12) then pop().`;
+
 let counter = 0;
 export function buildDsScene(kind, items) {
-  const start = items && items.length ? items : [10, 20, 30];
+  const start = items && items.length ? items : DEFAULT_EXAMPLE.items;
   const struct = createStruct(kind, start);
   const q = kind === "queue";
   const id = `${kind}_${Date.now().toString(36)}_${counter++}`;
@@ -146,7 +154,7 @@ export function buildDsScene(kind, items) {
       outId: q ? "outgoing" : "gate",
       statusId: "status",
       initial: [...struct.items],
-      plan: q ? [{ op: "enqueue", value: 40 }, { op: "dequeue" }] : [{ op: "push", value: 40 }, { op: "pop" }]
+      plan: q ? [{ op: "enqueue", value: DEFAULT_EXAMPLE.value }, { op: "dequeue" }] : [{ op: "push", value: DEFAULT_EXAMPLE.value }, { op: "pop" }]
     }
   };
 }

@@ -30,6 +30,17 @@ import {
 //  - Data-structure operations are executed by deterministic code; the
 //    diagram and the professor's context come from the real result.
 
+// Shared-example tools: names the professor uses for the ONE active example.
+// Each maps onto the deterministic data-structure command that executes it.
+export const EXAMPLE_ALIASES = {
+  create_example: "ds_start",
+  replace_example: "ds_start",
+  set_example_values: "ds_start",
+  perform_operation: "ds_operation",
+  animate_operation: "ds_replay",
+  get_active_example: "ds_state"
+};
+
 export const DIRECTOR_TOOL_NAMES = [
   "focus_node",
   "show_overview",
@@ -46,6 +57,7 @@ export const DIRECTOR_TOOL_NAMES = [
   "ds_operation",
   "ds_replay",
   "ds_state",
+  ...Object.keys(EXAMPLE_ALIASES),
   ...REVISIT_TOOL_NAMES,
   ...TEXT_TOOL_NAMES
 ];
@@ -62,6 +74,7 @@ export function createDirector(api) {
   let pending = 0;
   let ds = null; // { sceneId, meta, struct, ops: [] } committed data-structure state
   let opSeq = 0;
+  let exampleSeq = 0;
   const history = [];
 
   const objects = () => api.scene()?.objects ?? [];
@@ -84,10 +97,36 @@ export function createDirector(api) {
     const sc = api.scene();
     if (!sc?.ds) return null;
     if (!ds || ds.sceneId !== sc.scene_id) {
-      ds = { sceneId: sc.scene_id, meta: sc.ds, struct: createStruct(sc.ds.kind, sc.ds.initial), ops: [] };
+      ds = { sceneId: sc.scene_id, meta: sc.ds, struct: createStruct(sc.ds.kind, sc.ds.initial), ops: [], exampleId: `ex_${++exampleSeq}` };
     }
     return ds;
   };
+  // ActiveTeachingExample: the single example both the voice and the diagram use.
+  const activeExample = () => {
+    const d = getDs();
+    if (!d) return null;
+    return {
+      exampleId: d.exampleId,
+      topic: d.meta.kind,
+      structureType: d.meta.kind,
+      initialState: [...d.meta.initial],
+      currentState: [...d.struct.items],
+      operations: d.ops.map((o) => ({
+        operationId: `op_${o.seq}`,
+        operationType: o.op,
+        operands: o.value !== undefined ? [o.value] : [],
+        expectedBefore: o.before,
+        computedAfter: o.after,
+        returned: o.returned,
+        ok: o.ok
+      })),
+      currentOperationId: d.ops.length ? `op_${d.ops[d.ops.length - 1].seq}` : null,
+      sceneId: d.sceneId,
+      version: d.ops.length
+    };
+  };
+  const exampleHeader = (d) =>
+    `ACTIVE EXAMPLE ${d.exampleId} (${d.meta.kind}, version ${d.ops.length}): ${summarize(d.struct)}`;
   const setItems = (d, items) => api.tutor().updateObject(d.meta.structId, { items: displayItems(d.meta.kind, items) });
   const setStatus = (d, text) => api.tutor().updateObject(d.meta.statusId, { label: String(text).slice(0, 42) });
   // The picture must always show the committed data.
@@ -120,6 +159,8 @@ export function createDirector(api) {
       await canvas?.highlightNode(structId);
       setStatus(d, `${rec.op}(${rec.value}) added`);
     } else if (rec.op === info.remove) {
+      setStatus(d, `${rec.op}(): top is ${rec.returned}`);
+      await canvas?.highlightNode(structId);
       const out = canvas?.transfer(structId, outId, rec.returned);
       await delay(250);
       setItems(d, rec.after);
@@ -137,7 +178,7 @@ export function createDirector(api) {
     const detail = rec.ok
       ? `Before: [${rec.before.join(", ")}]. After: [${rec.after.join(", ")}]. ${rec.returned !== undefined ? `Returned: ${rec.returned}. ` : ""}`
       : "";
-    return `${head}${explainResult(rec)} ${detail}The diagram now shows exactly this. Current state: ${summarize(d.struct)} ${RULES[d.meta.kind]} Explain which element was affected and why, using only these real values. Mention complexity only briefly if it helps: ${COMPLEXITY[d.meta.kind]}`;
+    return `${head}${exampleHeader(d)} ${explainResult(rec)} ${detail}The diagram now shows exactly this. Current state: ${summarize(d.struct)} ${RULES[d.meta.kind]} Explain which element was affected and why, using only these real values. Mention complexity only briefly if it helps: ${COMPLEXITY[d.meta.kind]}`;
   };
 
   // Teaching history + semantic navigation (revisit, replay, retrace, resume).
@@ -250,8 +291,12 @@ export function createDirector(api) {
 
     // ---- deterministic data structures ----
     async ds_start({ kind, items }) {
+      kind = kind || getDs()?.meta.kind;
       if (!KINDS[kind]) return `Supported structures: ${Object.keys(KINDS).join(", ")}.`;
-      const list = Array.isArray(items) ? items.slice(0, 6) : [];
+      const list = (Array.isArray(items) ? items : [])
+        .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
+        .map((v) => (Number.isFinite(Number(v)) ? Number(v) : String(v)))
+        .slice(0, 6);
       const sc = buildDsScene(kind, list.length ? list : undefined);
       api.loadScene(sc);
       ds = null;
@@ -260,7 +305,7 @@ export function createDirector(api) {
       await api.guided().overview();
       await delay(600);
       await api.guided().travelTo(d.meta.structId, -1, { follow: false });
-      return `A ${kind} diagram is on screen. ${dsFacts(d)} Introduce it with one short everyday metaphor, explain the rule, then demonstrate with ds_operation (for example ${KINDS[kind].add} then ${KINDS[kind].remove}). Never state contents other than the ones given by tool results.`;
+      return `Done: a NEW example replaced the previous one. ${exampleHeader(d)}. The diagram shows exactly these values; use only them from now on. ${dsFacts(d)} Introduce it with one short everyday metaphor, explain the rule, then demonstrate with ds_operation (for example ${KINDS[kind].add} then ${KINDS[kind].remove}). Never state contents other than the ones given by tool results.`;
     },
     async ds_operation({ op, value }) {
       const d = getDs();
@@ -299,13 +344,14 @@ export function createDirector(api) {
         .slice(-6)
         .map((o) => `#${o.seq} ${o.op}${o.value !== undefined ? `(${o.value})` : "()"} ${o.ok ? `[${o.before.join(", ")}] -> [${o.after.join(", ")}]${o.returned !== undefined ? ` returned ${o.returned}` : ""}` : `refused: ${o.error}`}`)
         .join("; ");
-      return `${dsFacts(d)} Operations so far: ${log || "none"}. Answer the student using ONLY these real values.`;
+      return `${exampleHeader(d)}. ${dsFacts(d)} Operations so far: ${log || "none"}. Answer the student using ONLY these real values.`;
     }
   };
 
   Object.assign(commands, rv.commands, text.commands);
 
   const run = (name, args = {}) => {
+    name = EXAMPLE_ALIASES[name] || name;
     const fn = commands[name];
     if (!fn) return Promise.resolve(`Unknown visual command ${name}.`);
     if (PAUSE_NAMES.includes(name)) return fn(args);
@@ -377,7 +423,7 @@ export function createDirector(api) {
   const dsIntro = () => {
     const d = getDs();
     return d
-      ? `${dsFacts(d)} This is a REAL data structure. The professor chooses operations with ds_operation (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. Plan for the demo: ${d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(" then ")}.`
+      ? `${exampleHeader(d)}. Use exactly these values when you speak. ${dsFacts(d)} This is a REAL data structure. The professor chooses operations with ds_operation (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. Plan for the demo: ${d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(" then ")}.`
       : "";
   };
 
@@ -392,6 +438,7 @@ export function createDirector(api) {
     isPaused: () => paused,
     pending: () => pending,
     dsIntro,
+    activeExample,
     dsOpsDone: () => (getDs() ? getDs().ops.length : 0),
     dsState: () => (getDs() ? { items: [...getDs().struct.items], ops: getDs().ops.length } : null)
   };
