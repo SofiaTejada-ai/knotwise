@@ -14,8 +14,11 @@ import {
   MOVE_NODE_TOOL,
   openQuestionInstructions,
   teachingInstructions,
+  streamingInstructions,
   profileContext
 } from "@/lib/liveTutorSession";
+import { useLessonOrchestrator } from "@/hooks/useLessonOrchestrator";
+import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL];
 
@@ -40,7 +43,11 @@ export default function LiveTutor() {
   const [sceneMode, setSceneMode] = useState("prep"); // prep | present | quiz
 
   const voice = useRealtimeVoice();
+  const orch = useLessonOrchestrator();
 
+  const topicKeyRef = useRef(null); // visual key of the topic on screen ("opening" until the outline arrives)
+  const visualPromisesRef = useRef({}); // diagram requests per topic key
+  const questionRef = useRef("");
   const mapRef = useRef(null);
   const activeRef = useRef(null);
   const profileRef = useRef(null);
@@ -92,60 +99,114 @@ export default function LiveTutor() {
   // Build the presentation for a topic: spoken segments, each with its own
   // picture, all ready before the tutor starts presenting. On failure the
   // tutor explains the topic in their own words, honestly with no picture.
-  const buildPresentation = async (node) => {
-    try {
-      const res = await base44.functions.invoke("buildNodePresentation", {
-        nodeLabel: node.label,
-        nodeDescription: node.description,
-        nodeExample: node.example ?? "",
-        question: mapRef.current?.title ?? "",
-        ageRange: profileRef.current?.ageRange ?? "",
-        textOnly: true
-      });
-      const segs = res?.data?.presentation?.segments;
-      if (Array.isArray(segs) && segs.length) {
-        // Pictures load in parallel; the lesson starts as soon as the first
-        // one is ready and the rest fill in while the tutor speaks.
-        const loads = segs.map((s) =>
-          base44.functions
-            .invoke("generateSegmentPicture", { imagePrompt: s.imagePrompt })
-            .then((r) => {
-              s.url = r?.data?.url ?? null;
-            })
-            .catch(() => {
-              s.url = null;
-            })
-        );
-        await Promise.race([loads[0], new Promise((r) => setTimeout(r, 15000))]);
-        return segs;
-      }
-    } catch (err) {
-      // The lesson continues without pictures.
-    }
-    return [{ idea: node.label, spokenText: null, url: null }];
+  // Visual Generation Engine: asks the backend for a literal technical diagram
+  // plus teaching steps, validates it, and falls back to a deterministic
+  // technical diagram. Never blocks the professor.
+  const fetchSegments = async (node, question) => {
+    const topicText = `${node.label} ${node.description ?? ""} ${question ?? ""}`;
+    const res = await base44.functions.invoke("buildNodePresentation", {
+      nodeLabel: node.label,
+      nodeDescription: node.description ?? "",
+      question: question || mapRef.current?.title || "",
+      ageRange: profileRef.current?.ageRange ?? ""
+    });
+    return toSegments(res?.data, topicText);
   };
 
-  // Prepare the next topic's pictures in the background while the current one
-  // is being taught, so moving on is instant instead of another prep wait.
+  const applyPresentation = (segs) => {
+    presentationRef.current = segs;
+    setPresentation(segs);
+    orch.setVisual(segs?.visual?.source ?? "none", { source: segs?.visual?.source, steps: segs?.length ?? 0 });
+  };
+
+  // Starts (or reuses) the diagram request for a topic. When it lands and that
+  // topic is still the one on screen, the canvas updates; otherwise the result
+  // is only cached. Stale results from an older lesson are discarded.
+  const loadTopicVisual = (key, node, { question, allowTemplate } = {}) => {
+    if (visualPromisesRef.current[key]) return visualPromisesRef.current[key];
+    const tpl = allowTemplate ? matchTemplate(question) : null;
+    const p = tpl
+      ? Promise.resolve({ result: templateSegments(tpl), fresh: true })
+      : orch.requestVisual(key, () => fetchSegments(node, question));
+    const done = p.then(({ result, fresh }) => {
+      if (!fresh) return null;
+      const segs = result ?? [{ idea: node.label, spokenText: null }];
+      segCacheRef.current[key] = segs;
+      if (topicKeyRef.current === key) applyPresentation(segs);
+      return segs;
+    });
+    visualPromisesRef.current[key] = done;
+    return done;
+  };
+
+  // Prepare the next topic's diagram in the background while the current one
+  // is being taught, so moving on is instant.
   const prefetchNext = (node) => {
     const m = mapRef.current;
     if (!m || !node) return;
     const next = m.nodes[m.nodes.findIndex((n) => n.id === node.id) + 1];
-    if (!next || segCacheRef.current[next.id] || prefetchingRef.current[next.id]) return;
-    prefetchingRef.current[next.id] = true;
-    buildPresentation(next).then((segs) => {
-      segCacheRef.current[next.id] = segs;
-      prefetchingRef.current[next.id] = false;
-    });
+    if (next) loadTopicVisual(next.id, next, { question: questionRef.current });
   };
 
   const openNode = (node) => {
     setActiveNodeId(node.id);
     activeRef.current = node.id;
-    setPresentation(null);
-    presentationRef.current = null;
+    topicKeyRef.current = node.id;
+    orch.setTopic(node.label, node.description);
+    const cached = segCacheRef.current[node.id];
+    setPresentation(cached ?? null);
+    presentationRef.current = cached ?? null;
     setSegIndex(null);
     setSceneMode("prep");
+  };
+
+  // Streaming start: the canvas and the professor begin at once. The lesson
+  // outline (topics and practice) is built in the background and attached
+  // when ready, without resetting what is on screen.
+  const beginStreaming = (question) => {
+    questionRef.current = question;
+    const lessonId = orch.beginLesson(question);
+    topicKeyRef.current = "opening";
+    segCacheRef.current = {};
+    prefetchingRef.current = {};
+    visualPromisesRef.current = {};
+    presentationRef.current = null;
+    setPresentation(null);
+    setSegIndex(null);
+    setSceneMode("present");
+    setPhase("teaching");
+    buildingRef.current = true;
+    setBuildingMap(true);
+    loadTopicVisual("opening", { id: "opening", label: question.slice(0, 80), description: question }, {
+      question,
+      allowTemplate: true
+    });
+    buildMap(question)
+      .then((m) => {
+        if (orch.stateRef.current.lessonId !== lessonId) return;
+        const first = m.nodes[0];
+        setMap(m);
+        mapRef.current = m;
+        setActiveNodeId(first.id);
+        activeRef.current = first.id;
+        orch.setTopic(first.label, first.description);
+        voice.updateSession(
+          teachingInstructions(m, first.id, practiceRef.current, profileRef.current),
+          TEACHING_TOOLS
+        );
+        prefetchNext(first);
+      })
+      .catch(() => {
+        if (orch.stateRef.current.lessonId === lessonId) {
+          voice.tellTutor(
+            "(The practice questions could not be built. Keep teaching conversationally and finish with a short spoken summary.)"
+          );
+        }
+      })
+      .finally(() => {
+        buildingRef.current = false;
+        setBuildingMap(false);
+      });
   };
 
   // --- Notes Agent (runs in the background, never interrupts the lesson) ---
@@ -209,7 +270,13 @@ export default function LiveTutor() {
   const nudgeAfterConnect = () => {
     const m = mapRef.current;
     const node = m?.nodes.find((n) => n.id === activeRef.current);
-    if (!m || !node) return;
+    if (!node) {
+      // The outline is still building: teach from the question right away.
+      voice.requestResponse(
+        `(The student asked: "${questionRef.current}". Begin right away: say one short natural sentence about it, then call show_segment(0) and follow its words. Never say anything is being prepared.)`
+      );
+      return;
+    }
     if (sceneModeRef.current === "quiz") {
       voice.requestResponse(
         `(Reconnected. The practice quiz is on screen for "${node.label}". Remind the student they can tap or circle their answer, then wait.)`
@@ -220,18 +287,35 @@ export default function LiveTutor() {
       );
     } else {
       voice.requestResponse(
-        `(The student is ready and the topic is "${node.label}". Say nothing first: call show_segment(0) immediately, then speak exactly the text the tool result gives you.)`
+        `(The student is ready and the topic is "${node.label}". Say one short natural sentence, then call show_segment(0) and speak the words the tool result gives you.)`
       );
     }
   };
 
+  // The professor starts as soon as the voice is live; the lesson state only
+  // has to exist, never the finished presentation.
   useEffect(() => {
     if (phase !== "teaching" || voice.status !== "listening") return;
-    if (!mapRef.current || !presentationRef.current) return; // scene must be ready first
+    if (!orch.stateRef.current.lessonId) return;
     if (nudgedRef.current) return;
     nudgedRef.current = true;
     nudgeAfterConnect();
-  }, [voice.status, phase, presentation]);
+  }, [voice.status, phase, orch.state.lessonId]);
+
+  // Keep the shared lesson state in step with what the professor is doing.
+  useEffect(() => {
+    orch.setProfessorStatus(voice.status);
+  }, [voice.status]);
+  useEffect(() => {
+    if (voice.userTranscript) orch.noteInteraction("speech", voice.userTranscript.slice(0, 120));
+  }, [voice.userTranscript]);
+
+  const handleNodeClick = (n) => {
+    orch.noteInteraction("diagram_click", n.label);
+    voice.tellTutor(
+      `(The student tapped "${n.label}" in the diagram. Briefly explain what it is and what it does here, then continue where you left off.)`
+    );
+  };
 
   const markDone = (id) => {
     if (!id) return;
@@ -247,46 +331,42 @@ export default function LiveTutor() {
   // --- Realtime tool calls from the tutor ---
   const handleToolCall = async ({ name, arguments: args, call_id }) => {
     if (name === "start_topic") {
-      if (mapRef.current || buildingRef.current) {
-        voice.sendFunctionCallOutput(call_id, "The lesson is already on screen.");
+      if (orch.stateRef.current.lessonId) {
+        voice.sendFunctionCallOutput(call_id, "The lesson is already on screen. Keep teaching.");
         return;
       }
-      buildingRef.current = true;
-      setBuildingMap(true);
-      try {
-        const m = await buildMap(String(args?.question ?? ""));
-        const first = m.nodes[0];
-        setMap(m);
-        mapRef.current = m;
-        setPhase("teaching");
-        openNode(first);
-        voice.updateSession(
-          teachingInstructions(m, first.id, practiceRef.current, profileRef.current),
-          TEACHING_TOOLS
-        );
-        const segs = await buildPresentation(first);
-        presentationRef.current = segs;
-        setPresentation(segs);
-        prefetchNext(first);
-        nudgedRef.current = true; // the function output below cues the tutor
-        voice.sendFunctionCallOutput(
-          call_id,
-          `Your lesson "${m.title}" is on screen with ${m.nodes.length} topics. The screen shows the topic "${first.label}" with its pictures ready. Say nothing else: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
-        );
-      } catch (err) {
-        voice.sendFunctionCallOutput(
-          call_id,
-          "The lesson could not be built. Ask the student to say their question again in a different way."
-        );
-      }
-      buildingRef.current = false;
-      setBuildingMap(false);
+      // Streaming start: answer the tool at once so the professor speaks
+      // immediately while the diagram and outline build in parallel.
+      const q = String(args?.question ?? "").trim() || voice.userTranscript || "the student's question";
+      beginStreaming(q);
+      voice.updateSession(streamingInstructions(q, profileRef.current), TEACHING_TOOLS);
+      nudgedRef.current = true; // the function output below cues the tutor
+      voice.sendFunctionCallOutput(
+        call_id,
+        `The technical diagram for "${q}" is appearing on the student's screen now. Begin right away: say one short natural sentence about their question, then call show_segment(0) and follow its words. Never say anything is being prepared.`
+      );
     } else if (name === "show_segment") {
-      const segs = presentationRef.current ?? [];
+      let segs = presentationRef.current;
+      if (!segs) {
+        // The diagram is still being drawn. Wait only briefly: the professor
+        // has already been speaking, and never stalls on it.
+        const key = topicKeyRef.current;
+        const pending = visualPromisesRef.current[key];
+        segs = pending ? await Promise.race([pending, new Promise((r) => setTimeout(() => r(null), 3500))]) : null;
+        if (!segs || key !== topicKeyRef.current) {
+          voice.sendFunctionCallOutput(
+            call_id,
+            "The diagram is not on screen yet. Explain the student's question in your own plain words in two or three sentences, as if teaching step by step, then call show_segment(0) again. Never say anything is being prepared."
+          );
+          return;
+        }
+        if (!presentationRef.current) applyPresentation(segs);
+      }
       const i = Math.min(Math.max(Number(args?.segment_index) || 0, 0), Math.max(segs.length - 1, 0));
       const seg = segs[i];
       setSegIndex(i);
       setSceneMode("present");
+      orch.setStep(i, { nodes: seg?.nodes ?? [], edges: seg?.edges ?? [] });
       if (!seg) {
         voice.sendFunctionCallOutput(call_id, "There is nothing to show for this part. Continue explaining calmly.");
         return;
@@ -296,8 +376,8 @@ export default function LiveTutor() {
         voice.sendFunctionCallOutput(
           call_id,
           last
-            ? `Picture ${i + 1} of ${segs.length} is on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" Then ask: "Does that make sense?" and wait for the student's answer. Do not call any function yet.`
-            : `Picture ${i + 1} of ${segs.length} is on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" As you finish speaking, call show_segment(${i + 1}). Keep a steady pace, no pause, no questions.`
+            ? `Diagram step ${i + 1} of ${segs.length} is highlighted on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" Then ask: "Does that make sense?" and wait for the student's answer. Do not call any function yet.`
+            : `Diagram step ${i + 1} of ${segs.length} is highlighted on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" As you finish speaking, call show_segment(${i + 1}). Keep a steady pace, no pause, no questions.`
         );
       } else {
         voice.sendFunctionCallOutput(
@@ -310,6 +390,13 @@ export default function LiveTutor() {
         );
       }
     } else if (name === "confirm_understanding") {
+      if (!mapRef.current) {
+        voice.sendFunctionCallOutput(
+          call_id,
+          "Keep chatting with the student about the topic for a moment, then ask again whether it makes sense."
+        );
+        return;
+      }
       const node = mapRef.current?.nodes.find((n) => n.id === activeRef.current);
       if (args?.understood === true) {
         const p = node?.practice;
@@ -355,16 +442,15 @@ export default function LiveTutor() {
         teachingInstructions(m, node.id, practiceRef.current, profileRef.current),
         TEACHING_TOOLS
       );
-      // Usually the next topic's pictures were prefetched while the last one
-      // was taught, so this is instant.
-      const segs = segCacheRef.current[node.id] ?? (await buildPresentation(node));
-      presentationRef.current = segs;
-      setPresentation(segs);
+      // Usually the next topic's diagram was prefetched while the last one was
+      // taught. If not, it loads in the background and the professor starts
+      // speaking right away.
+      loadTopicVisual(node.id, node, { question: questionRef.current });
       prefetchNext(node);
       nudgedRef.current = true; // the function output below cues the tutor
       voice.sendFunctionCallOutput(
         call_id,
-        `The screen now shows the topic "${node.label}" and its pictures are ready. Say nothing first: call show_segment(0) immediately, then speak exactly the text the tool result gives you.`
+        `The screen now shows the topic "${node.label}". Say one short natural sentence introducing it, then call show_segment(0) and speak the words the tool result gives you. Never say anything is being prepared.`
       );
     }
   };
@@ -399,36 +485,16 @@ export default function LiveTutor() {
 
     const question = (typedQuestion ?? "").trim();
     if (question) {
-      // Typed question: build the lesson first, then the tutor presents it live.
-      buildingRef.current = true;
-      setBuildingMap(true);
-      try {
-        const m = await buildMap(question);
-        const first = m.nodes[0];
-        setMap(m);
-        mapRef.current = m;
-        openNode(first);
-        setPhase("teaching");
-        // Connect the tutor while the pictures are still being prepared, so
-        // the connection time is never felt. The tutor stays silent until the
-        // scene is ready.
-        const connecting = voice.start(profileContext(p), {
-          instructions: teachingInstructions(m, first.id, {}, p),
-          tools: TEACHING_TOOLS,
-          onToolCall: handleToolCall
-        });
-        const segs = await buildPresentation(first);
-        presentationRef.current = segs;
-        setPresentation(segs);
-        prefetchNext(first);
-        await connecting;
-      } catch (err) {
-        setHomeError("I could not build a lesson for that question. Try rephrasing it.");
-        setPhase("home");
-      }
-      buildingRef.current = false;
-      setBuildingMap(false);
+      // Typed question: the diagram and the professor start together; the
+      // outline builds in the background.
+      beginStreaming(question);
+      voice.start(profileContext(p), {
+        instructions: streamingInstructions(question, p),
+        tools: TEACHING_TOOLS,
+        onToolCall: handleToolCall
+      });
     } else {
+      orch.reset();
       // Voice-first: the tutor greets, listens, and identifies the topic.
       setPhase("asking");
       voice.start(profileContext(p), {
@@ -449,6 +515,13 @@ export default function LiveTutor() {
         tools: TEACHING_TOOLS,
         onToolCall: handleToolCall
       });
+    } else if (orch.stateRef.current.lessonId && questionRef.current) {
+      nudgedRef.current = false;
+      voice.start(profileContext(p), {
+        instructions: streamingInstructions(questionRef.current, p),
+        tools: TEACHING_TOOLS,
+        onToolCall: handleToolCall
+      });
     } else if (p) {
       voice.start(profileContext(p), {
         instructions: openQuestionInstructions(p),
@@ -460,6 +533,7 @@ export default function LiveTutor() {
 
   const endSession = () => {
     voice.stop();
+    orch.reset();
     setPhase("home");
     setMap(null);
     mapRef.current = null;
@@ -492,8 +566,10 @@ export default function LiveTutor() {
 
   const askNewQuestion = () => {
     const p = profileRef.current;
+    orch.reset();
     segCacheRef.current = {};
     prefetchingRef.current = {};
+    visualPromisesRef.current = {};
     setMap(null);
     mapRef.current = null;
     setActiveNodeId(null);
@@ -614,7 +690,10 @@ export default function LiveTutor() {
     <LessonScene
       node={activeNode}
       mode={sceneMode}
-      segment={segment}
+      visual={presentation?.visual ?? null}
+      steps={presentation}
+      stepIndex={segIndex}
+      onNodeClick={handleNodeClick}
       captionsOn={!!profile?.captions}
       captionText={voice.tutorText}
       voiceStatus={voice.status}

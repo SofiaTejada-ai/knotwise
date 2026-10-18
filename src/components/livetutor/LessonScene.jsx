@@ -1,20 +1,24 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Image } from "@/components/ui/image";
-import { Loader2, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import SceneQuiz from "./SceneQuiz";
 import StatusPill from "./StatusPill";
+import TechDiagram from "@/components/lesson/TechDiagram";
+import DiagramSkeleton from "@/components/lesson/DiagramSkeleton";
 
-// The immersive lesson scene: one focus at a time. While the tutor presents,
-// the screen shows the picture for the idea being spoken, one picture at a
-// time. After the understanding check, the practice quiz becomes the focus.
-// The only control is one small Stop lesson button; captions are optional
-// and unobtrusive. No sidebars, notes, lists or progress panels.
+// The immersive lesson scene: one focus at a time. While the professor
+// teaches, the screen shows a literal technical diagram whose parts light up
+// with each spoken step. Until the diagram is ready a quiet outline shows and
+// the professor keeps talking. After the understanding check, the practice
+// quiz becomes the focus. The only control is one small Stop lesson button.
 export default function LessonScene({
   node,
   mode, // prep | present | quiz
-  segment, // { idea, url } for the idea being spoken
+  visual, // { nodes, edges } diagram for the topic, or null while drawing
+  steps, // steps of the topic (null while drawing)
+  stepIndex,
+  onNodeClick,
   captionsOn,
   captionText,
   voiceStatus,
@@ -24,7 +28,7 @@ export default function LessonScene({
   onStuck,
   reducedMotion = false
 }) {
-  const fade = reducedMotion ? { duration: 0 } : { duration: 0.6 };
+  const fade = reducedMotion ? { duration: 0 } : { duration: 0.4 };
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white">
@@ -54,38 +58,26 @@ export default function LessonScene({
 
       {/* the stage: one focus at a time */}
       <div className="flex flex-1 items-center justify-center px-6 pb-28 pt-16">
-        {mode === "prep" && (
-          <div className="flex flex-col items-center gap-3 text-slate-400">
-            <Loader2 className={reducedMotion ? "h-6 w-6" : "h-6 w-6 animate-spin"} />
-            <p data-testid="prep-state" className="text-sm">
-              Getting the pictures ready for this topic...
-            </p>
-          </div>
-        )}
-
-        {mode === "present" && (
+        {mode !== "quiz" && (
           <AnimatePresence mode="wait">
             <motion.div
-              key={segment?.idea ?? "none"}
+              key={visual ? "diagram" : "wait"}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={fade}
-              className="w-full max-w-2xl"
+              className="flex w-full max-w-4xl justify-center"
             >
-              {segment?.url ? (
-                <div className="overflow-hidden rounded-3xl border border-slate-100 shadow-sm">
-                  <Image
-                    src={segment.url}
-                    alt={`Picture showing ${segment.idea}`}
-                    className="aspect-[4/3] w-full"
-                    fittingType="fill"
-                  />
-                </div>
+              {visual ? (
+                <TechDiagram
+                  visual={visual}
+                  steps={steps ?? []}
+                  stepIndex={mode === "present" ? stepIndex : null}
+                  onNodeClick={onNodeClick}
+                  reducedMotion={reducedMotion}
+                />
               ) : (
-                <p data-testid="no-picture" className="text-center text-sm text-slate-400">
-                  No picture for this part. Keep listening to your tutor.
-                </p>
+                <DiagramSkeleton title={node?.label} reducedMotion={reducedMotion} />
               )}
             </motion.div>
           </AnimatePresence>
