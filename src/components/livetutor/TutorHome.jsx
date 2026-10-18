@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Mic, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -147,6 +148,12 @@ export default function TutorHome({ onStart, error, busy }) {
           </Button>
           <p className="flex items-center justify-center gap-1 text-xs text-slate-400">
             <Sparkles className="h-3 w-3" /> Your tutor listens, then builds a visual map of your question.
+          </p>
+          <p className="text-center text-xs text-slate-400">
+            Want to study your own document instead?{" "}
+            <Link to="/research" className="underline hover:text-slate-600">
+              Open the research tool
+            </Link>
           </p>
         </div>
       </div>

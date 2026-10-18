@@ -1,29 +1,11 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
+import { SEGMENTS_SCHEMA, generateSegmentImages } from '../../shared/segmentImages.ts';
 
 // Builds the immersive presentation for one lesson topic: an ordered list of
 // spoken segments, each with its own matching picture. All pictures are
 // generated before the presentation starts, so the tutor can advance the
 // scene picture by picture exactly when each idea is spoken - a picture is
 // never shown before it is ready and never belongs to a different idea.
-
-const SEGMENTS_SCHEMA = {
-  type: 'object',
-  properties: {
-    segments: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          idea: { type: 'string' },
-          spokenText: { type: 'string' },
-          imagePrompt: { type: 'string' }
-        },
-        required: ['idea', 'spokenText', 'imagePrompt']
-      }
-    }
-  },
-  required: ['segments']
-};
 
 export default async function(req) {
   try {
@@ -77,21 +59,7 @@ export default async function(req) {
 
     // One matching picture per segment, generated together so the whole
     // presentation is ready before the tutor starts speaking.
-    const images = await Promise.allSettled(
-      segments.map((s) =>
-        base44.asServiceRole.integrations.Core.GenerateImage({
-          prompt: `${s.imagePrompt}. Style: clean flat vector illustration, soft light colors, one clear central visual metaphor, generous white space, absolutely no text or letters in the image, nothing scary or alarming.`
-        })
-      )
-    );
-    const withPictures = segments.map((s, i) => ({
-      idea: s.idea,
-      spokenText: s.spokenText,
-      url:
-        images[i].status === 'fulfilled' && images[i].value?.url
-          ? String(images[i].value.url)
-          : null
-    }));
+    const withPictures = await generateSegmentImages(base44.asServiceRole.integrations, segments);
 
     return Response.json({ presentation: { segments: withPictures } });
   } catch (error) {
