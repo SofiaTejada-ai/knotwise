@@ -30,6 +30,11 @@ export function createTextCommands({ api, find, needNode, dsStructId }) {
       return { x: clamp(Number(x), 60, 840), y: clamp(Number(y), 40, 510) };
     const n = near_id && find(near_id);
     if (n) return { x: clamp(n.x, 140, 760), y: clamp(n.y + 105, 40, 515) };
+    // First free spot that does not cover another part or text.
+    const others = api.scene()?.objects ?? [];
+    for (const cy of [60, 490, 150, 400, 270])
+      for (const cx of [450, 230, 670])
+        if (others.every((o) => Math.abs(o.x - cx) > 190 || Math.abs(o.y - cy) > 70)) return { x: cx, y: cy };
     return { x: 450, y: 60 + (texts().length % 6) * 72 };
   };
   const listing = () => texts().map((o) => `${o.id}: ${o.text}`).join("; ") || "none";

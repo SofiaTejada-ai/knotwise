@@ -149,6 +149,8 @@ export default function LiveTutor() {
     });
   }
 
+  window.__dbgDirector = directorRef.current; // TEMP-DEBUG
+
   useAutoCamera({
     scene: tutor.scene,
     active: phase === "teaching" && sceneMode === "present",
