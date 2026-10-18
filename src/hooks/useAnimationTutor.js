@@ -144,6 +144,8 @@ export function useAnimationTutor() {
     setScene(next);
   }, []);
 
+  const getScene = useCallback(() => sceneRef.current, []);
+
   const reset = useCallback(() => {
     sceneRef.current = null;
     historyRef.current = [];
@@ -170,6 +172,7 @@ export function useAnimationTutor() {
     source,
     error,
     canvasRef,
+    getScene,
     sendMessage,
     goToStep,
     replay,

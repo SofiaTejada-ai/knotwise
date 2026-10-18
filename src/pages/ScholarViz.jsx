@@ -10,6 +10,8 @@ import NarrationPanel from "@/components/scholarviz/NarrationPanel";
 import SourceHelper from "@/components/scholarviz/SourceHelper";
 import { useAnimationTutor } from "@/hooks/useAnimationTutor";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
+import { useSpokenLesson } from "@/hooks/useSpokenLesson";
+import ProfessorControls from "@/components/scholarviz/ProfessorControls";
 
 const SUGGESTIONS = [
   "How does a scam text reach my phone?",
@@ -46,17 +48,54 @@ export default function ScholarViz() {
     speakTimer.current = setTimeout(() => setRoomState("idle"), 7000);
   };
 
+  const lesson = useSpokenLesson({
+    getScene: tutor.getScene,
+    goToStep: tutor.goToStep,
+    isAnimating: tutor.isAnimating
+  });
+  const [voiceOn, setVoiceOn] = useState(true);
+  const interactions = useRef({});
+  const questionRef = useRef(null);
+  const focus = lesson.status === "speaking" || lesson.status === "answering";
+
+  // Student moves a piece: remember before/after so the professor can react to it.
+  const handleMove = (id, x, y) => {
+    const o = (tutor.getScene()?.objects ?? []).find((obj) => obj.id === id);
+    const from = interactions.current[id]?.from ?? { x: o?.x, y: o?.y };
+    interactions.current[id] = { label: o?.label || id, from, to: { x, y } };
+    tutor.moveNode(id, x, y);
+  };
+
   const ask = async (text, opts = {}) => {
     const q = String(text ?? "").trim();
     if (!q || tutor.isLoading) return;
     lastQuestion.current = { q, opts };
+    const idx = lesson.getIndex();
+    const interrupted = lesson.status === "speaking" || lesson.status === "answering";
+    const midLesson = interrupted || lesson.status === "paused";
+    const sceneBefore = tutor.getScene()?.scene_id;
+    if (interrupted) lesson.pause();
     setVoiceNotice(null);
     setRoomState("thinking");
     setCaptions(["I am thinking. Please wait."]);
     const suffix = topic ? ` ${topic.suffix}` : "";
-    const narration = await tutor.sendMessage(q + suffix, opts);
-    if (narration) showSpeaking([narration]);
-    else {
+    const moves = Object.values(interactions.current)
+      .map((m) => `${m.label} from (${m.from.x},${m.from.y}) to (${m.to.x},${m.to.y})`)
+      .join("; ");
+    interactions.current = {};
+    const note = moves ? ` [The student just moved these pieces on the diagram: ${moves}. Respond to what they did.]` : "";
+    const narration = await tutor.sendMessage(q + suffix + note, opts);
+    if (narration) {
+      showSpeaking([narration]);
+      const after = tutor.getScene();
+      const sameLesson = !!sceneBefore && after?.scene_id === sceneBefore;
+      const inserted = Math.max(0, (after?.sequence ?? []).findIndex((s) => s.inserted));
+      const resumeAt = sameLesson ? (midLesson ? idx : inserted) : 0;
+      if (voiceOn && sessionStatus === "idle") {
+        const finished = await lesson.say(narration);
+        if (finished) lesson.run(resumeAt);
+      }
+    } else {
       setRoomState("idle");
       setCaptions(["I could not build that animation. Try rephrasing your question."]);
     }
@@ -75,6 +114,7 @@ export default function ScholarViz() {
   const askedTranscript = useRef(null);
 
   const startVoice = () => {
+    lesson.stop();
     setVoiceNotice(null);
     const context = [
       "Current page: the visual tutor. The student asks questions out loud, you answer, and an animated diagram for their question is being built.",
@@ -96,6 +136,7 @@ export default function ScholarViz() {
   }, [userTranscript, sessionStatus]);
 
   const handleNew = () => {
+    lesson.stop();
     tutor.reset();
     setCaptions(WELCOME);
     setRoomState("idle");
@@ -108,7 +149,7 @@ export default function ScholarViz() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
-      <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+      <header className={`flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 ${focus ? "hidden" : "flex"}`}>
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 text-white">
           <Clapperboard className="h-5 w-5" />
         </div>
@@ -123,6 +164,9 @@ export default function ScholarViz() {
           Live tutor
         </Link>
         <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)}>
+            Voice {voiceOn ? "on" : "off"}
+          </Button>
           <Button variant="outline" size="sm" disabled={!tutor.scene} onClick={() => tutor.replay()}>
             Replay
           </Button>
@@ -142,8 +186,9 @@ export default function ScholarViz() {
               playMode={tutor.playMode}
               onStepComplete={tutor.setCurrentStep}
               onAnimatingChange={tutor.setIsAnimating}
-              onMoveNode={tutor.moveNode}
+              onMoveNode={handleMove}
               onUpdateObject={tutor.updateObject}
+              paused={lesson.status === "paused"}
             />
             <div className="pointer-events-none absolute left-3 top-3 max-w-xs rounded-lg bg-white/95 px-3 py-1.5 text-xs shadow-sm">
               {step ? (
@@ -168,6 +213,18 @@ export default function ScholarViz() {
               </div>
             )}
           </div>
+          <div className="border-t border-slate-200 p-3">
+            <ProfessorControls
+              lesson={lesson}
+              hasScene={!!tutor.scene}
+              busy={tutor.isLoading}
+              onReplay={() => lesson.run(0)}
+              onAsk={() => {
+                lesson.pause();
+                setTimeout(() => questionRef.current?.querySelector("input")?.focus(), 50);
+              }}
+            />
+          </div>
           <div className="flex justify-center border-t border-slate-200 p-3">
             <StepControls
               total={seq.length}
@@ -183,7 +240,8 @@ export default function ScholarViz() {
 
         <div className="flex min-h-0 flex-col gap-4 lg:w-[35%]">
           <TutorRoom roomState={roomState} lines={captions} voiceNotice={voiceNotice} onMicPress={startVoice} />
-          <SourceHelper source={tutor.source} />
+          {!focus && <SourceHelper source={tutor.source} />}
+          <div ref={questionRef} className={focus ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
           <NarrationPanel
             messages={tutor.messages}
             isLoading={tutor.isLoading}
@@ -196,6 +254,7 @@ export default function ScholarViz() {
             onTopic={setTopic}
             onClearTopic={() => setTopic(null)}
           />
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import MissedConcepts from "@/components/review/MissedConcepts";
 import { Button } from "@/components/ui/button";
 import { ClipboardList, HardDrive, Loader2, BookOpenCheck } from "lucide-react";
 import SessionCard from "@/components/review/SessionCard";
@@ -62,6 +63,8 @@ export default function ReviewQuiz() {
             Saved lessons live only in this browser on this device.
           </p>
         </div>
+
+        {!quiz && <MissedConcepts />}
 
         {quiz ? (
           <ReviewQuizRunner

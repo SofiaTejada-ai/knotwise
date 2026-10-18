@@ -155,7 +155,8 @@ export default function AnimationCanvas({
   onStepComplete,
   onAnimatingChange,
   onMoveNode,
-  onUpdateObject
+  onUpdateObject,
+  paused = false
 }) {
   const svgRef = useRef(null);
   const animRef = useRef(null);
@@ -165,7 +166,12 @@ export default function AnimationCanvas({
   const prevSceneId = useRef(null);
 
   const cbRef = useRef({});
-  cbRef.current = { onStepComplete, onAnimatingChange, onMoveNode, onUpdateObject };
+  cbRef.current = { onStepComplete, onAnimatingChange, onMoveNode, onUpdateObject, paused };
+
+  // Freeze or continue the running animation (professor paused / interrupted).
+  useEffect(() => {
+    tlRef.current?.paused(!!paused);
+  }, [paused]);
 
   // Rebuild the GSAP timeline whenever playback is requested.
   useEffect(() => {
@@ -185,6 +191,7 @@ export default function AnimationCanvas({
       onComplete: () => cbRef.current.onAnimatingChange?.(false)
     });
     tlRef.current = tl;
+    if (cbRef.current.paused) tl.paused(true);
     for (const step of played) {
       tl.call(() => cbRef.current.onStepComplete?.(step.step - 1), [], tl.duration());
       addStepToTimeline(tl, step, layer, scene, (id, props) => cbRef.current.onUpdateObject?.(id, props));
