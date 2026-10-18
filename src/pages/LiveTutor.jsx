@@ -571,6 +571,7 @@ export default function LiveTutor() {
           // it takes a while, so say so.
           set({ status: "uploading", name, progress: "scanned PDF, this can take a minute" });
           const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+          await base44.entities.UploadedFile.create({ file_uri });
           set({ status: "reading", name, progress: "scanned PDF, this can take a minute" });
           const res = await base44.functions.invoke("extractDocument", { file_uri, fileName: name });
           const text = res?.data?.document?.fullText;

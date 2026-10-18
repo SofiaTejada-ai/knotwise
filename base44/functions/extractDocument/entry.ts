@@ -35,6 +35,9 @@ export default async function(req) {
       );
     }
 
+    const owned = await base44.asServiceRole.entities.UploadedFile.filter({ file_uri: fileUri, created_by_id: user.id }, '-created_date', 1);
+    if (!owned?.length) return Response.json({ error: 'The document could not be opened.' }, { status: 403 });
+
     const { signed_url } = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({
       file_uri: fileUri,
       expires_in: 300

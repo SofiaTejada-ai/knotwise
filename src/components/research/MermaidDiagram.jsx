@@ -6,7 +6,7 @@ const ensureInit = () => {
   if (!initialized) {
     mermaid.initialize({
       startOnLoad: false,
-      securityLevel: "loose",
+      securityLevel: "strict",
       theme: "base",
       themeVariables: { fontFamily: "JetBrains Mono, ui-monospace, monospace", fontSize: "14px" }
     });

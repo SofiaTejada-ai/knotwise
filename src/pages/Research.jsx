@@ -62,6 +62,7 @@ export default function Research() {
       // (stored privately)
       const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
       if (!file_uri) throw new Error("The document could not be uploaded.");
+      await base44.entities.UploadedFile.create({ file_uri });
       setBusyStep(1);
       const ex = await base44.functions.invoke("extractDocument", { file_uri, fileName: file.name });
       const document = ex?.data?.document;
