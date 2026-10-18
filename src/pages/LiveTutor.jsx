@@ -6,7 +6,7 @@ import TutorHome from "@/components/livetutor/TutorHome";
 import QuietRoomCheck from "@/components/livetutor/QuietRoomCheck";
 import LessonScene from "@/components/livetutor/LessonScene";
 import WrapUpCard from "@/components/livetutor/WrapUpCard";
-import { saveSession } from "@/lib/localSessionStore";
+import { saveSession, updateSavedSession } from "@/lib/localSessionStore";
 import {
   START_TOPIC_TOOL,
   SHOW_SEGMENT_TOOL,
@@ -82,6 +82,12 @@ export default function LiveTutor() {
   // The practice question on screen, written live by the professor and
   // checked against the lesson and the material (never prepared in advance).
   const [livePractice, setLivePractice] = useState(null);
+  // Session history: every practice question asked (with the result) and
+  // every document used, saved with the professor's notes.
+  const [asked, setAsked] = useState([]);
+  const askedIdRef = useRef(null);
+  const docNamesRef = useRef([]);
+  const recordingRef = useRef(false); // a lesson is being recorded
   const docRef = useRef(null);
   const docSeqRef = useRef(0);
 
@@ -376,6 +382,7 @@ export default function LiveTutor() {
   // when ready, without resetting what is on screen.
   const beginStreaming = (question) => {
     questionRef.current = question;
+    recordingRef.current = true;
     const lessonId = orch.beginLesson(question);
     topicKeyRef.current = "opening";
     segCacheRef.current = {};
@@ -421,40 +428,64 @@ export default function LiveTutor() {
   };
 
   // --- Notes Agent (runs in the background, never interrupts the lesson) ---
-  const runNotesAgent = async (node) => {
+  // The topic notes belong to: the outline topic being taught, or the
+  // student's own question before the outline exists.
+  const noteTopic = () =>
+    mapRef.current?.nodes.find((n) => n.id === activeRef.current) ??
+    (recordingRef.current ? { id: "opening", label: questionRef.current.slice(0, 60) || "Your question", description: "the student's question" } : null);
+
+  // Notes Agent: takes notes all through the session. The conversation since
+  // its last note becomes a NEW note for the topic (up to 6 per topic), so a
+  // long lesson keeps every important point, not only the latest one. A note
+  // that arrives after the lesson ended is still added to that saved session.
+  const runNotesAgent = async (node, { force = false } = {}) => {
     if (!node || notesBusyRef.current) return;
+    const pending = exchangesRef.current[node.id] || "";
+    const hasNote = notesRef.current.some((n) => n.nodeId === node.id);
+    if (pending.length < (force ? 1 : 300) && (hasNote || !force)) return;
+    const sid = sessionIdRef.current;
+    const take = pending.slice(0, 1200);
+    exchangesRef.current[node.id] = pending.slice(1200);
     notesBusyRef.current = true;
     try {
-      const exchange = (exchangesRef.current[node.id] || "").slice(-1200);
       const res = await base44.functions.invoke("writeLessonNotes", {
-        question: mapRef.current?.title ?? "",
+        question: mapRef.current?.title || questionRef.current,
         nodeLabel: node.label,
         nodeDescription: node.description,
-        exchange
+        exchange: take
       });
-      const note = res?.data?.note;
-      if (note) {
+      const text = String(res?.data?.note ?? "").trim();
+      const note = text && { nodeId: node.id, label: node.label, text, at: Date.now() };
+      const add = (list) => {
+        if (list.some((n) => n.nodeId === node.id && n.text === text)) return list;
+        const mine = list.filter((n) => n.nodeId === node.id);
+        return [...list.filter((n) => n !== mine[0] || mine.length < 6), note];
+      };
+      if (note && sid === sessionIdRef.current && recordingRef.current) {
         setNotes((prev) => {
-          const next = prev.filter((n) => n.nodeId !== node.id);
-          next.push({ nodeId: node.id, label: node.label, text: note });
+          const next = add(prev);
           notesRef.current = next;
           return next;
         });
+      } else if (note) {
+        const base = { id: sid, savedAt: Number(sid) || Date.now(), title: mapRef.current?.title || questionRef.current || "Live Tutor session", question: questionRef.current, documents: docNamesRef.current, notes: [], asked: [], finished: true };
+        updateSavedSession(sid, (saved) => ({ ...saved, notes: add(saved.notes ?? []) }), base);
       }
     } catch (err) {
       // Notes are best-effort: the live lesson always continues.
+      if (sid === sessionIdRef.current) exchangesRef.current[node.id] = take + (exchangesRef.current[node.id] || "");
     }
     notesBusyRef.current = false;
   };
 
-  // When a spoken exchange settles, save it for the node and let the Notes
-  // Agent condense everything said so far into that node's note.
+  // When a spoken exchange settles, add it to the topic's pending
+  // conversation; the Notes Agent writes a note once enough has been said.
   useEffect(() => {
     if (phase !== "teaching") return;
     const timer = setTimeout(() => {
-      const nodeId = activeRef.current;
-      const node = mapRef.current?.nodes.find((n) => n.id === nodeId);
+      const node = noteTopic();
       if (!node) return;
+      const nodeId = node.id;
       let changed = false;
       let log = exchangesRef.current[nodeId] || "";
       if (voice.userTranscript && voice.userTranscript !== capturedRef.current.user) {
@@ -468,7 +499,7 @@ export default function LiveTutor() {
         changed = true;
       }
       if (changed) {
-        exchangesRef.current[nodeId] = log.slice(-1500);
+        exchangesRef.current[nodeId] = log.slice(-4000);
         runNotesAgent(node);
       }
     }, 3500);
@@ -532,12 +563,10 @@ export default function LiveTutor() {
   const markDone = (id) => {
     if (!id) return;
     setDoneNodes((d) => (d.includes(id) ? d : [...d, id]));
-    // If the node finishes before a spoken note was captured, still leave
-    // the student a short note about the topic.
-    if (!notesRef.current.some((n) => n.nodeId === id)) {
-      const node = mapRef.current?.nodes.find((n) => n.id === id);
-      if (node) runNotesAgent(node);
-    }
+    // Finishing a topic writes its last note from whatever was said since
+    // the previous one (or a key-idea note if nothing was captured).
+    const node = mapRef.current?.nodes.find((n) => n.id === id) ?? (id === "opening" ? noteTopic() : null);
+    if (node) runNotesAgent(node, { force: true });
   };
 
   // --- Class material (RAG): validate, extract, index, tell the professor ---
@@ -588,6 +617,7 @@ export default function LiveTutor() {
       if (docSeqRef.current !== token) return;
       docRef.current = built;
       setDoc({ status: "ready", name, sections: built.sections, unit: built.unit });
+      if (!docNamesRef.current.includes(name)) docNamesRef.current = [...docNamesRef.current, name];
       documentChanged(built);
     } catch (err) {
       set({ status: "error", name, error: err?.response?.data?.error || err?.message || "The document could not be read." });
@@ -748,6 +778,8 @@ export default function LiveTutor() {
         source: check.source ?? null
       };
       setLivePractice(p);
+      askedIdRef.current = p.id;
+      setAsked((prev) => [...prev, { ...p, topic: node?.label ?? questionRef.current.slice(0, 60), attempts: 0, correct: false }].slice(-20));
       setSceneMode("quiz");
       voice.sendFunctionCallOutput(
         call_id,
@@ -823,7 +855,7 @@ export default function LiveTutor() {
     practiceRef.current = {};
     setHomeError(null);
     buildingRef.current = false;
-    sessionIdRef.current = String(Date.now());
+    newHistorySession();
     setNotes([]);
     notesRef.current = [];
     exchangesRef.current = {};
@@ -890,7 +922,24 @@ export default function LiveTutor() {
     }
   };
 
+  // Each lesson is its own history entry; notes still being written for the
+  // previous one are added to it when they arrive.
+  function newHistorySession() {
+    sessionIdRef.current = String(Date.now());
+    recordingRef.current = false;
+    setAsked([]);
+    askedIdRef.current = null;
+    docNamesRef.current = docRef.current ? [docRef.current.name] : [];
+  }
+  // Writes the last note from whatever was said since the previous one.
+  const flushNotes = () => {
+    const node = noteTopic();
+    if (node) runNotesAgent(node, { force: true });
+  };
+
   const endSession = () => {
+    flushNotes();
+    recordingRef.current = false;
     voice.stop();
     orch.reset();
     tutor.reset();
@@ -921,12 +970,17 @@ export default function LiveTutor() {
       setDoneNodes(m.nodes.map((n) => n.id));
       setPhase("wrapup");
     } else {
+      flushNotes();
+      recordingRef.current = false;
+      updateSavedSession(sessionIdRef.current, (saved) => ({ ...saved, finished: true }));
       setPhase("home");
     }
   };
 
   const askNewQuestion = () => {
     const p = profileRef.current;
+    flushNotes();
+    newHistorySession();
     orch.reset();
     tutor.reset();
     segCacheRef.current = {};
@@ -971,6 +1025,7 @@ export default function LiveTutor() {
   // --- Practice tracking: the scene reports the student's actual response ---
   const handleAttempt = (nodeId, entry) => {
     learner.practice(entry);
+    setAsked((prev) => prev.map((q) => (q.id === askedIdRef.current ? { ...q, attempts: entry.attempts, hints: entry.hints, correct: entry.correct } : q)));
     setPracticeLog((prev) => {
       const next = { ...prev, [nodeId]: { ...prev[nodeId], ...entry } };
       practiceRef.current = next;
@@ -1004,21 +1059,29 @@ export default function LiveTutor() {
     );
   };
 
-  // --- Local saving (prototype: this browser on this device only) ---
+  // --- Session history (this browser on this device) ---
+  // Recorded from the first moment of a lesson, not only once the outline
+  // exists: the professor's notes, documents used, examples, practice.
   useEffect(() => {
-    if (!map) return;
+    if (!recordingRef.current || !sessionIdRef.current) return;
+    if (!notes.length && !asked.length && !map) return;
     saveSession({
       id: sessionIdRef.current,
-      savedAt: Date.now(),
-      title: map.title,
+      savedAt: Number(sessionIdRef.current) || Date.now(),
+      updatedAt: Date.now(),
+      title: map?.title || questionRef.current || "Live Tutor session",
+      question: questionRef.current,
+      documents: docNamesRef.current,
       profile: profileRef.current,
-      nodes: map.nodes,
+      nodes: map?.nodes ?? [],
       completedNodes: doneNodes,
       practiceLog,
       notes,
+      asked,
+      examples: learner.examples(),
       finished: phase === "wrapup"
     });
-  }, [map, doneNodes, practiceLog, notes, phase]);
+  }, [map, doneNodes, practiceLog, notes, asked, phase, doc?.name]);
 
   // --- Screens ---
   const documentBar = <DocumentBar doc={doc} onPick={loadDocument} onRemove={removeDocument} />;

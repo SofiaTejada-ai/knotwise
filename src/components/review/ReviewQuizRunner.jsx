@@ -4,7 +4,7 @@ import { Lightbulb, ArrowRight, PartyPopper } from "lucide-react";
 
 // Runs the cumulative review quiz question by question, with hints, retries
 // and a friendly result summary at the end.
-export default function ReviewQuizRunner({ questions, onExit }) {
+export default function ReviewQuizRunner({ questions, onExit, onFinish, exitLabel = "Back to my saved lessons" }) {
   const [index, setIndex] = useState(0);
   const [wrong, setWrong] = useState([]);
   const [correct, setCorrect] = useState(false);
@@ -24,7 +24,7 @@ export default function ReviewQuizRunner({ questions, onExit }) {
         <p className="text-sm text-slate-500">
           Nice reviewing. You can retake the quiz any time, or start a new lesson.
         </p>
-        <Button onClick={onExit}>Back to my saved lessons</Button>
+        <Button onClick={onExit}>{exitLabel}</Button>
       </div>
     );
   }
@@ -45,6 +45,7 @@ export default function ReviewQuizRunner({ questions, onExit }) {
   const next = () => {
     if (index + 1 >= questions.length) {
       setFinished(true);
+      onFinish?.(score, questions.length);
       return;
     }
     setIndex((i) => i + 1);

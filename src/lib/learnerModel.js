@@ -103,6 +103,7 @@ export function createLearnerModel() {
       changed();
     },
     isKnown: (n) => s.known.has(Math.round(Number(n))),
+    examples: () => [...s.examples],
     knownSteps: () => [...s.known].sort((a, b) => a - b),
 
     // ---- outputs ----
