@@ -37,6 +37,7 @@ export default function Home() {
           </Link>
           <nav className="flex items-center gap-6 text-sm text-slate-600">
             <Link to="/livetutor" className="hover:text-slate-900">Live Tutor</Link>
+            <Link to="/#history" className="hover:text-slate-900">History &amp; review quizzes</Link>
           </nav>
         </div>
       </header>

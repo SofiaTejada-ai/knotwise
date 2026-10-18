@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import ListeningOverlay from "@/components/safeSteps/ListeningOverlay";
@@ -92,6 +93,7 @@ export default function LiveTutor() {
   const docSeqRef = useRef(0);
 
   const voice = useRealtimeVoice();
+  const navigate = useNavigate();
   const orch = useLessonOrchestrator();
 
   const topicKeyRef = useRef(null); // visual key of the topic on screen ("opening" until the outline arrives)
@@ -977,6 +979,15 @@ export default function LiveTutor() {
     }
   };
 
+  // Open this lesson's history entry (notes and final review quiz) on Home.
+  const reviewSession = () => {
+    const id = sessionIdRef.current;
+    flushNotes();
+    recordingRef.current = false; // a note still being written goes to the saved session
+    voice.stop();
+    navigate(`/?session=${id}#history`);
+  };
+
   const askNewQuestion = () => {
     const p = profileRef.current;
     flushNotes();
@@ -1122,7 +1133,7 @@ export default function LiveTutor() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-xl">
-          <WrapUpCard map={map} practiceLog={practiceLog} onNewQuestion={askNewQuestion} onEnd={endSession} />
+          <WrapUpCard map={map} practiceLog={practiceLog} onNewQuestion={askNewQuestion} onEnd={endSession} onReview={reviewSession} />
         </div>
       </div>
     );

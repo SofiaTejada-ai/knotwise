@@ -1,15 +1,17 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import moment from "moment";
 import { Clock, FileText, ListChecks, NotebookPen } from "lucide-react";
-import { loadSessions } from "@/lib/localSessionStore";
+import { loadSession, loadSessions } from "@/lib/localSessionStore";
 import { hasContent } from "@/lib/sessionReview";
 import SessionReview from "@/components/home/SessionReview";
 
 // Session history: every Live Tutor session with what was covered, saved on
 // this device. Opening one shows its notes, practice and a final review quiz.
 export default function SessionHistory() {
-  const [open, setOpen] = useState(null);
+  // /?session=<id> (from the end of a lesson) opens that session's review.
+  const [params, setParams] = useSearchParams();
+  const [open, setOpen] = useState(() => (params.get("session") ? loadSession(params.get("session")) : null));
   const [version, setVersion] = useState(0); // reload after a quiz is taken
   const sessions = loadSessions()
     .filter(hasContent)
@@ -17,7 +19,7 @@ export default function SessionHistory() {
     .slice(0, 12);
 
   return (
-    <section className="mx-auto max-w-6xl px-6 pb-20" data-version={version}>
+    <section id="history" className="mx-auto max-w-6xl scroll-mt-6 px-6 pb-20" data-version={version}>
       <div className="flex items-center gap-2">
         <Clock className="h-5 w-5 text-slate-400" />
         <h2 className="font-heading text-xl font-semibold text-slate-900">Your session history</h2>
@@ -75,6 +77,7 @@ export default function SessionHistory() {
           session={open}
           onClose={() => {
             setOpen(null);
+            if (params.get("session")) setParams({}, { replace: true });
             setVersion((v) => v + 1);
           }}
         />

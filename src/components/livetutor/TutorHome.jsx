@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Mic } from "lucide-react";
+import { Mic, History } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +40,13 @@ export default function TutorHome({ onStart, error, busy, footer = null }) {
         <p className="text-center text-xs text-slate-400">
           Studying your own class material? Add it below and the professor teaches from it.
         </p>
+        <Link
+          to="/#history"
+          className="flex items-center justify-center gap-1.5 text-sm text-slate-500 underline-offset-4 hover:text-slate-800 hover:underline"
+        >
+          <History className="h-4 w-4" />
+          Your session history and review quizzes
+        </Link>
       </div>
       {footer}
     </div>

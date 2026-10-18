@@ -1,9 +1,9 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { PartyPopper, MessageCircleQuestion, Home } from "lucide-react";
+import { PartyPopper, MessageCircleQuestion, Home, NotebookPen } from "lucide-react";
 
 // End-of-lesson card: what was practiced, and where to go next.
-export default function WrapUpCard({ map, practiceLog, onNewQuestion, onEnd }) {
+export default function WrapUpCard({ map, practiceLog, onNewQuestion, onEnd, onReview }) {
   const nodes = map?.nodes ?? [];
   const solved = nodes.filter((n) => practiceLog?.[n.id]?.correct).length;
 
@@ -21,6 +21,12 @@ export default function WrapUpCard({ map, practiceLog, onNewQuestion, onEnd }) {
         <p className="text-xs text-slate-400">
           Your notes, practice results, and progress are saved only in this browser on this device.
         </p>
+        {onReview && (
+          <Button variant="secondary" className="w-full gap-1.5" onClick={onReview}>
+            <NotebookPen className="h-4 w-4" />
+            Review this session and take the quiz
+          </Button>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button className="gap-1" onClick={onNewQuestion}>
             <MessageCircleQuestion className="h-4 w-4" />
