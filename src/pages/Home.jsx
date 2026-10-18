@@ -1,26 +1,20 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Mic, FileSearch, ShieldCheck, ArrowRight, LineChart, Clapperboard } from "lucide-react";
+import { Mic, FileSearch, ShieldCheck, ArrowRight, LineChart } from "lucide-react";
 import SessionHistory from "@/components/home/SessionHistory";
 
 const ROUTES = [
   {
-    to: "/livetutor",
+    to: "/scholarviz",
     icon: Mic,
     title: "General Questions",
-    text: "Talk with a patient tutor who listens to your question and explains it with pictures, one step at a time."
+    text: "Ask any question out loud or typed. A patient professor explains it step by step on an animated canvas you can drag."
   },
   {
     to: "/research",
     icon: FileSearch,
     title: "Research",
     text: "Upload a class document and learn it with clear diagrams, exact quotes from your material, and short checks."
-  },
-  {
-    to: "/scholarviz",
-    icon: Clapperboard,
-    title: "Visual Tutor",
-    text: "Ask any question and watch it animated step by step. Drag the pieces to explore."
   },
   {
     to: "/graph-lesson",
@@ -45,7 +39,7 @@ export default function Home() {
             Knotwise
           </Link>
           <nav className="flex items-center gap-6 text-sm text-slate-600">
-            <Link to="/livetutor" className="hover:text-slate-900">Live tutor</Link>
+            <Link to="/scholarviz" className="hover:text-slate-900">Ask a question</Link>
             <Link to="/research" className="hover:text-slate-900">Research</Link>
             <Link to="/lesson" className="hover:text-slate-900">Practice lesson</Link>
           </nav>
@@ -65,7 +59,7 @@ export default function Home() {
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
-            to="/livetutor"
+            to="/scholarviz"
             className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-700"
           >
             Ask a question <ArrowRight className="h-4 w-4" />

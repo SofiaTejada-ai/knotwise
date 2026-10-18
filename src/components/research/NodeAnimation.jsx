@@ -1,78 +1,79 @@
-import React from "react";
+import React, { useState } from "react";
 import { Clapperboard, Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import AnimationCanvas from "@/components/scholarviz/AnimationCanvas";
-import StepControls from "@/components/scholarviz/StepControls";
+import { base44 } from "@/api/base44Client";
+import ProfessorCanvas from "@/components/lesson/ProfessorCanvas";
+import SpokenVisual from "@/components/lesson/SpokenVisual";
 import { useAnimationTutor } from "@/hooks/useAnimationTutor";
+import { VISUALS, VISUAL_KINDS } from "@/lib/visualRegistry";
 
-// The animated explanation of one topic, built only from the student's own
-// document text. Step through it, replay it, or drag the pieces around.
+// The visual explanation of one topic, built only from the student's own
+// document text, shown on the shared professor stage. The student picks the
+// kind of visual: animation, timeline, comparison, whiteboard or sort-it.
 export default function NodeAnimation({ node, docTitle }) {
   const tutor = useAnimationTutor();
-  const seq = tutor.scene?.sequence ?? [];
-  const step = seq[tutor.currentStep];
+  const [kind, setKind] = useState("animation");
+  const [visuals, setVisuals] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const generate = () =>
-    tutor.sendMessage(`Animate this topic from "${docTitle}": ${node.label}. ${node.explanation}`, {
-      groundingText: `${node.label}\n${node.explanation}\n${node.excerpt ?? ""}`
-    });
+  const groundingText = `${node.label}\n${node.explanation}\n${node.excerpt ?? ""}`;
+  const isAnim = kind === "animation";
+  const ready = isAnim ? !!tutor.scene : !!visuals[kind];
+  const busy = isAnim ? tutor.isLoading : loading;
+
+  const generate = async () => {
+    setError("");
+    if (isAnim) {
+      tutor.sendMessage(`Animate this topic from "${docTitle}": ${node.label}. ${node.explanation}`, { groundingText });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await base44.functions.invoke("buildVisual", { kind, topic: node.label, groundingText });
+      const v = res?.data?.visual;
+      if (!v) throw new Error("none");
+      setVisuals((p) => ({ ...p, [kind]: v }));
+    } catch {
+      setError("I could not build that visual from this topic. Try another kind.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-3 border-t border-slate-200 pt-4" data-testid="node-animation">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-2 font-medium text-slate-800">
-          <Clapperboard className="h-4 w-4 text-indigo-600" />
-          Animated explanation
-        </p>
-        <div className="flex gap-2">
-          {tutor.scene && (
-            <Button variant="outline" size="sm" onClick={() => tutor.replay()}>
-              Play all steps
-            </Button>
-          )}
-          <Button size="sm" className="gap-2" disabled={tutor.isLoading} onClick={generate}>
-            {tutor.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {tutor.scene ? "Make a new animation" : "Watch it animated"}
-          </Button>
-        </div>
+      <p className="flex items-center gap-2 font-medium text-slate-800">
+        <Clapperboard className="h-4 w-4 text-indigo-600" />
+        Visual explanation
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        {VISUAL_KINDS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={kind === k}
+            onClick={() => {
+              setKind(k);
+              setError("");
+            }}
+            className={`min-h-[44px] rounded-full border px-4 text-sm focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-blue-600 ${
+              kind === k ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700"
+            }`}
+          >
+            {VISUALS[k].label}
+          </button>
+        ))}
+        <Button className="ml-auto min-h-[44px] gap-2" disabled={busy} onClick={generate}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {ready ? "Make a new one" : `Make a ${VISUALS[kind].label.toLowerCase()}`}
+        </Button>
       </div>
 
-      {tutor.error && <p className="text-sm text-red-600">{tutor.error}</p>}
+      {(isAnim ? tutor.error : error) && <p className="text-sm text-red-600">{isAnim ? tutor.error : error}</p>}
 
-      {tutor.scene && (
-        <div className="space-y-3">
-          <div className="relative h-[380px] overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-            <AnimationCanvas
-              scene={tutor.scene}
-              startStep={tutor.startStep}
-              playToken={tutor.playToken}
-              playMode={tutor.playMode}
-              onStepComplete={tutor.setCurrentStep}
-              onAnimatingChange={tutor.setIsAnimating}
-              onMoveNode={tutor.moveNode}
-              onUpdateObject={tutor.updateObject}
-            />
-            {step && (
-              <div className="pointer-events-none absolute left-3 top-3 max-w-xs rounded-lg bg-white/95 px-3 py-1.5 text-xs shadow-sm">
-                <span className="font-semibold text-slate-700">
-                  STEP {tutor.currentStep + 1} of {seq.length}
-                </span>
-                {step.description && <span className="block text-slate-500">{step.description}</span>}
-              </div>
-            )}
-          </div>
-          <StepControls
-            total={seq.length}
-            current={tutor.currentStep}
-            disabled={tutor.isAnimating}
-            onPrev={tutor.prevStep}
-            onReplay={tutor.replayStep}
-            onGoTo={tutor.goToStep}
-            onNext={tutor.nextStep}
-          />
-          <p className="text-center text-xs text-slate-400">Tip: drag any shape to move it.</p>
-        </div>
-      )}
+      {isAnim && tutor.scene && <ProfessorCanvas tutor={tutor} groundingText={groundingText} />}
+      {!isAnim && visuals[kind] && <SpokenVisual key={visuals[kind].title + kind} spec={visuals[kind]} />}
     </div>
   );
 }

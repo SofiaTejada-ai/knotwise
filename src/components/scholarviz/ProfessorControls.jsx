@@ -11,7 +11,7 @@ const LABELS = {
   done: "Lesson finished"
 };
 
-export default function ProfessorControls({ lesson, hasScene, busy, onReplay, onAsk, onSpoken }) {
+export default function ProfessorControls({ lesson, hasScene, busy, onReplay, onAsk, onSpoken, noAsk }) {
   const active = lesson.status === "speaking" || lesson.status === "answering";
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#E3E7EB] bg-white p-3" data-testid="professor-controls">
@@ -38,10 +38,14 @@ export default function ProfessorControls({ lesson, hasScene, busy, onReplay, on
       <Button variant="outline" className="min-h-[44px]" disabled={!hasScene || busy} onClick={onReplay}>
         <RotateCcw className="mr-1 h-4 w-4" /> Replay
       </Button>
-      <Button variant="outline" className="min-h-[44px]" disabled={!hasScene} onClick={onAsk}>
-        <MessageCircleQuestion className="mr-1 h-4 w-4" /> Ask a question
-      </Button>
-      <SpeakQuestionButton disabled={!hasScene || busy} onStart={lesson.pause} onQuestion={onSpoken} />
+      {!noAsk && (
+        <>
+          <Button variant="outline" className="min-h-[44px]" disabled={!hasScene} onClick={onAsk}>
+            <MessageCircleQuestion className="mr-1 h-4 w-4" /> Ask a question
+          </Button>
+          <SpeakQuestionButton disabled={!hasScene || busy} onStart={lesson.pause} onQuestion={onSpoken} />
+        </>
+      )}
       <label className="ml-auto flex items-center gap-2 text-sm text-[#5B6478]">
         Speed
         <select

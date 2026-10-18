@@ -52,8 +52,8 @@ export default function UploadCard({ onStart, busy, busyStep, error }) {
       </p>
       <p className="text-xs text-slate-400">
         Rather just ask a question?{" "}
-        <Link to="/livetutor" className="underline hover:text-slate-600">
-          Open the live tutor
+        <Link to="/scholarviz" className="underline hover:text-slate-600">
+          Ask the professor
         </Link>
         .
       </p>
