@@ -99,10 +99,26 @@ export default function LiveTutor() {
         nodeDescription: node.description,
         nodeExample: node.example ?? "",
         question: mapRef.current?.title ?? "",
-        ageRange: profileRef.current?.ageRange ?? ""
+        ageRange: profileRef.current?.ageRange ?? "",
+        textOnly: true
       });
       const segs = res?.data?.presentation?.segments;
-      if (Array.isArray(segs) && segs.length) return segs;
+      if (Array.isArray(segs) && segs.length) {
+        // Pictures load in parallel; the lesson starts as soon as the first
+        // one is ready and the rest fill in while the tutor speaks.
+        const loads = segs.map((s) =>
+          base44.functions
+            .invoke("generateSegmentPicture", { imagePrompt: s.imagePrompt })
+            .then((r) => {
+              s.url = r?.data?.url ?? null;
+            })
+            .catch(() => {
+              s.url = null;
+            })
+        );
+        await Promise.race([loads[0], new Promise((r) => setTimeout(r, 15000))]);
+        return segs;
+      }
     } catch (err) {
       // The lesson continues without pictures.
     }

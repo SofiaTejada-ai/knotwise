@@ -57,6 +57,20 @@ export default async function(req) {
       );
     }
 
+    // Fast path: return the script now; the app fetches pictures one by one.
+    if (body.textOnly === true) {
+      return Response.json({
+        presentation: {
+          segments: segments.map((s) => ({
+            idea: s.idea,
+            spokenText: s.spokenText,
+            imagePrompt: s.imagePrompt,
+            url: null
+          }))
+        }
+      });
+    }
+
     // One matching picture per segment, generated together so the whole
     // presentation is ready before the tutor starts speaking.
     const withPictures = await generateSegmentImages(base44.asServiceRole.integrations, segments);
