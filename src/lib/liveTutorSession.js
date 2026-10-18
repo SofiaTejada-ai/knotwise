@@ -1,4 +1,5 @@
 // Realtime session tools and tutor instructions for cyber8LiveTutor.
+import { detectKind, defaultExampleText } from "@/lib/dsEngine";
 // The lesson is one immersive scene: the tutor presents each topic segment by
 // segment, and every spoken segment has its own matching picture that the
 // tutor puts on screen exactly when it reaches that idea.
@@ -122,6 +123,32 @@ export const DIRECTOR_TOOLS = [
   ),
   tool("ds_state", "Get the real current contents and recent operations of the data structure on screen. Call it before answering any question about its contents."),
 
+  // The ONE shared example (voice and diagram). Same engine as ds_*.
+  tool(
+    "create_example",
+    "Establish a NEW example on screen BEFORE you say its numbers (for example a stack [5, 9], or a queue with the current values). Replaces the previous example. kind defaults to the current structure.",
+    { kind: { type: "string", enum: ["queue", "stack"] }, items: { type: "array", items: { type: "number" }, description: "Starting values; stack bottom to top, queue front to rear" } },
+    ["items"]
+  ),
+  tool(
+    "set_example_values",
+    "Start over with different values in the same structure (a what-if from the start). Replaces the current example.",
+    { items: { type: "array", items: { type: "number" }, description: "New starting values" } },
+    ["items"]
+  ),
+  tool(
+    "perform_operation",
+    "Execute one real operation on the active example. The app computes the result, animates the exact value and returns the real before/after. Explain only from that result.",
+    { op: { type: "string", enum: ["enqueue", "dequeue", "peek", "push", "pop"] }, value: { type: "number", description: "Value for enqueue or push" } },
+    ["op"]
+  ),
+  tool(
+    "animate_operation",
+    "Replay an operation of the active example visually (the last one by default) without changing the data.",
+    { which: { type: "number", description: "Operation number; omit for the last one" }, speed: { type: "string", enum: ["normal", "slower", "very_slow"] } }
+  ),
+  tool("get_active_example", "Get the active example: its id, starting values, current values and every operation so far."),
+
   // Conversational navigation: all of these only DISPLAY the past; none runs an operation again.
   tool("get_teaching_history", "List what has been taught so far (with replayable ids), the camera path, recent student questions and the saved teaching position. Call it when you are unsure what the student refers to."),
   tool(
@@ -219,6 +246,14 @@ DATA STRUCTURES (queue, stack): you CHOOSE and EXPLAIN operations; the app EXECU
 - "What about a stack?": call ds_start with kind stack, contrast LIFO with FIFO, then run push and pop and point out that the newest value leaves first.
 - Never state contents that the latest tool result does not show. If unsure, call ds_state.
 
+ONE SHARED EXAMPLE (the most important rule): your words and the diagram use the SAME example, the ACTIVE EXAMPLE named in tool results.
+- Never say a number that is not in the active example. Never describe an operation before its tool result arrives; you may say "let us push 12" and call perform_operation in the same breath, then describe the result.
+- "Another example" / "different numbers": choose new values, call create_example with them FIRST, then teach and demonstrate with perform_operation.
+- "Push 42" / "what if we push 100": if it continues the current example, call perform_operation with that value. If it is clearly a fresh what-if from the start, call set_example_values first. If you truly cannot tell, ask one short question.
+- "Show that again (slowly)": animate_operation with speed "slower". Never perform the operation again.
+- "A different example, but slower": create_example, then perform_operation, then animate_operation with speed "slower" if they want to see it again.
+- "How would this differ with a queue?": create_example with kind queue and the SAME current values, then enqueue and dequeue and contrast FIFO with LIFO.
+
 GOING BACK AND REVISITING (the student speaks naturally and never names parts, steps or buttons; YOU decide where to point):
 - Interpret what the student means in context, then choose the command. If unsure what they refer to, call get_teaching_history. Say one short sentence ("Sure, let's go back to the attacker"), then call the command.
 - "Go back to X" / "explain that part again" -> revisit_node with the part that matches. "Show me the last example" / "show me again" -> replay_example (queue or stack: why did 10 leave? call ds_state, then replay_example). "How did we get here?" / "where did that come from?" / "how do we get from here to there?" -> trace_previous_transition (it zooms out, then follows the arrow). "Why did the value change?" -> explain_state_change. "Show me the difference" -> compare_states. "What happened before this?" -> replay_step on the step before, or trace_previous_transition.
@@ -278,7 +313,11 @@ export function streamingInstructions(question, profile) {
   );
   return `${base}
 
-RIGHT NOW: the student asked "${question}". Start explaining immediately in your own plain words; the diagram is being drawn alongside you and the detailed steps arrive in a moment. If the student speaks, answer conversationally and never mention preparing anything.`;
+RIGHT NOW: the student asked "${question}".${
+    detectKind(question)
+      ? ` The diagram shows this ACTIVE EXAMPLE: ${defaultExampleText(detectKind(question))} Use exactly these numbers and no others; demonstrate with perform_operation once the steps arrive.`
+      : ""
+  } Start explaining immediately in your own plain words; the diagram is being drawn alongside you and the detailed steps arrive in a moment. If the student speaks, answer conversationally and never mention preparing anything.`;
 }
 
 export function teachingInstructions(map, activeNodeId, practiceLog, profile) {

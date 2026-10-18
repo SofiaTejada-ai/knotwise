@@ -450,7 +450,7 @@ export default function LiveTutor() {
   const handleToolCall = async ({ name, arguments: args, call_id }) => {
     if (DIRECTOR_TOOL_NAMES.includes(name)) {
       // Professor's visual commands: validated and queued by the director.
-      if (!tutorRef.current.getScene() && name !== "ds_start") {
+      if (!tutorRef.current.getScene() && !["ds_start", "create_example"].includes(name)) {
         voice.sendFunctionCallOutput(call_id, "The diagram is not on screen yet. Keep explaining in your own words.");
         return;
       }
