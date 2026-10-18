@@ -88,7 +88,7 @@ export default function LessonScene({
 
         {mode === "quiz" && (
           <div className="w-full max-w-3xl">
-            <SceneQuiz node={node} onAttempt={onAttempt} onStuck={onStuck} reducedMotion={reducedMotion} />
+            <SceneQuiz key={node?.practice?.id ?? node?.id} node={node} onAttempt={onAttempt} onStuck={onStuck} reducedMotion={reducedMotion} />
           </div>
         )}
       </div>

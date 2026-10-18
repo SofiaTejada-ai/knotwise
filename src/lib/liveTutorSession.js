@@ -62,6 +62,24 @@ export const MOVE_NODE_TOOL = {
   }
 };
 
+export const ASK_PRACTICE_TOOL = {
+  type: "function",
+  name: "ask_practice_question",
+  description:
+    "Put ONE practice question you wrote yourself on the student's screen (3 choices, tap or circle). It must test what you taught in this lesson or what the uploaded material says, with the same terms and examples. The app refuses questions that are not grounded.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: { type: "string", description: "The question, about the lesson you just taught" },
+      choices: { type: "array", items: { type: "string" }, description: "Exactly 3 short answer choices" },
+      correct_index: { type: "number", description: "Index of the correct choice: 0, 1 or 2" },
+      hint: { type: "string", description: "A one-line hint that points back to the lesson" },
+      explanation: { type: "string", description: "One line: why the correct answer is right, in the lesson's terms" }
+    },
+    required: ["question", "choices", "correct_index", "hint", "explanation"]
+  }
+};
+
 export const SEARCH_DOCUMENT_TOOL = {
   type: "function",
   name: "search_document",
@@ -436,7 +454,7 @@ HOW TO PRESENT THE ACTIVE TOPIC (follow this exactly):
 3. Keep the presentation moving at a calm, unhurried teaching pace: short pauses between ideas are good, no summaries yet.
 4. After the last part's words, ask exactly: "Does that make sense?" Then stop and listen to the student's answer.
 5. Judge honestly and call confirm_understanding: understood true only if the student really understood. If they did not, put what confused them in the confusion field.
-6. If the tool result says the practice quiz is on screen: read the question aloud exactly, tell the student they can tap or circle their answer on screen, then wait. The screen reports what the student did. Praise a correct answer in one short sentence, then call move_to_node with the next topic id and stay silent until its result arrives. If they missed, encourage them to try again without revealing the answer. If they missed twice, re-teach the idea in very simple everyday words, then invite them to try the last choice.
+6. PRACTICE QUESTIONS ARE YOURS AND LIVE: when it is time to check understanding, write ONE question yourself and show it with ask_practice_question. Base it only on what you taught in this lesson, on the uploaded material (search_document first if you need its exact wording), or on the general idea you want the student to learn. Use the same terms, examples and values as your lesson; never invent a new unrelated scenario (a receipt, a shop, a pet) that the lesson never used. The app refuses questions that are not grounded; if refused, write a better one. Once it is on screen: read the question and the three choices aloud exactly, tell the student they can tap or circle their answer on screen, then wait. The screen reports what the student did. Praise a correct answer in one short sentence, then call move_to_node with the next topic id and stay silent until its result arrives. If they missed, encourage them to try again without revealing the answer. If they missed twice, re-teach the idea in very simple everyday words, then invite them to try the last choice.
 7. If the student interrupts or asks a follow-up, answer it conversationally, then continue from the current part. Never restart the presentation. If the screen reports the student tapped a part of the diagram, explain that part briefly.
 8. After the LAST topic is done, call move_to_node with node_id "wrap_up" and close the lesson warmly in two sentences.
 

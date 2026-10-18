@@ -13,6 +13,7 @@ import {
   CONFIRM_UNDERSTANDING_TOOL,
   MOVE_NODE_TOOL,
   SEARCH_DOCUMENT_TOOL,
+  ASK_PRACTICE_TOOL,
   DIRECTOR_TOOLS,
   openQuestionInstructions,
   teachingInstructions,
@@ -35,6 +36,7 @@ import {
   documentInstructions,
   outline
 } from "@/lib/documentRag";
+import { checkPractice } from "@/lib/practiceCheck";
 
 // Animated-scene steps become the professor's spoken segments.
 function sceneToSegments(scene) {
@@ -53,7 +55,7 @@ import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
 import { useAutoCamera } from "@/hooks/useAutoCamera";
 import { detectKind, buildDsScene } from "@/lib/dsEngine";
 
-const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, SEARCH_DOCUMENT_TOOL, ...DIRECTOR_TOOLS];
+const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, SEARCH_DOCUMENT_TOOL, ASK_PRACTICE_TOOL, ...DIRECTOR_TOOLS];
 
 // cyber8LiveTutor: the student asks a question, the tutor plans the lesson
 // length itself, then teaches topic by topic in one immersive scene. The
@@ -77,6 +79,9 @@ export default function LiveTutor() {
   // The student's own class material: { status, name, sections, unit, error }.
   // The searchable document itself lives in docRef.
   const [doc, setDoc] = useState(null);
+  // The practice question on screen, written live by the professor and
+  // checked against the lesson and the material (never prepared in advance).
+  const [livePractice, setLivePractice] = useState(null);
   const docRef = useRef(null);
   const docSeqRef = useRef(0);
 
@@ -363,6 +368,7 @@ export default function LiveTutor() {
     presentationRef.current = cached ?? null;
     setSegIndex(null);
     setSceneMode("prep");
+    setLivePractice(null);
   };
 
   // Streaming start: the canvas and the professor begin at once. The lesson
@@ -404,7 +410,7 @@ export default function LiveTutor() {
       .catch(() => {
         if (orch.stateRef.current.lessonId === lessonId) {
           voice.tellTutor(
-            "(The practice questions could not be built. Keep teaching conversationally and finish with a short spoken summary.)"
+            "(The lesson outline could not be built. Keep teaching conversationally and finish with a short spoken summary.)"
           );
         }
       })
@@ -718,33 +724,48 @@ export default function LiveTutor() {
           }`
         );
       }
-    } else if (name === "confirm_understanding") {
-      if (!mapRef.current) {
-        voice.sendFunctionCallOutput(
-          call_id,
-          "Keep chatting with the student about the topic for a moment, then ask again whether it makes sense."
-        );
+    } else if (name === "ask_practice_question") {
+      const node = mapRef.current?.nodes.find((n) => n.id === activeRef.current);
+      const d = docRef.current;
+      const check = checkPractice(args, {
+        doc: d,
+        taught: taughtText(),
+        topic: [questionRef.current, mapRef.current?.title, node?.label, node?.description].filter(Boolean).join(" ")
+      });
+      if (!check.ok) {
+        voice.sendFunctionCallOutput(call_id, `Not done: ${check.error} Nothing was shown. Write a new question with ask_practice_question.`);
         return;
       }
-      const node = mapRef.current?.nodes.find((n) => n.id === activeRef.current);
+      const p = {
+        id: `pq_${Date.now()}`,
+        question: String(args.question).slice(0, 240),
+        choices: args.choices.map((c) => String(c).slice(0, 90)),
+        correct_index: Number(args.correct_index),
+        hint: String(args.hint ?? "").slice(0, 160),
+        explanation: String(args.explanation ?? "").slice(0, 240),
+        basis: check.basis,
+        source: check.source ?? null
+      };
+      setLivePractice(p);
+      setSceneMode("quiz");
+      voice.sendFunctionCallOutput(
+        call_id,
+        `The question is on screen${check.source && d ? `, grounded in ${check.source} of "${d.name}"` : ""}. Read the question and its three choices aloud exactly as written, tell the student they can tap or circle their answer, then wait. The screen will report what they do.`
+      );
+    } else if (name === "confirm_understanding") {
+      const m = mapRef.current;
       learner.confirm(args?.understood === true, args?.confusion);
       if (args?.understood === true) {
-        const p = node?.practice;
-        if (p && Array.isArray(p.choices) && p.choices.length === 3) {
-          setSceneMode("quiz");
-          voice.sendFunctionCallOutput(
-            call_id,
-            `The practice quiz is now the focus on screen. Read this question aloud exactly: "${p.question}" Then tell the student they can tap or circle their answer on screen, and wait. The screen will report what they do.`
-          );
-        } else {
-          const m = mapRef.current;
-          const idx = m ? m.nodes.findIndex((n) => n.id === activeRef.current) : -1;
-          const next = m?.nodes[idx + 1];
-          voice.sendFunctionCallOutput(
-            call_id,
-            `There is no practice for this topic. Praise the student in one short sentence, then call move_to_node with node_id "${next ? next.id : "wrap_up"}".`
-          );
-        }
+        const idx = m ? m.nodes.findIndex((n) => n.id === activeRef.current) : -1;
+        const next = m?.nodes[idx + 1];
+        voice.sendFunctionCallOutput(
+          call_id,
+          `Good. Now check understanding with ONE practice question that you write yourself about what you just taught${
+            docRef.current ? ` and what "${docRef.current.name}" says about it (call search_document first if you need its exact wording)` : ""
+          }: call ask_practice_question. Use the same terms, examples and values as your lesson, nothing unrelated. If this part truly needs no practice, praise the student in one short sentence and ${
+            m ? `call move_to_node with node_id "${next ? next.id : "wrap_up"}"` : "continue teaching"
+          }.`
+        );
       } else {
         voice.sendFunctionCallOutput(
           call_id,
@@ -811,6 +832,7 @@ export default function LiveTutor() {
     setSegIndex(null);
     segRef.current = null;
     setSceneMode("prep");
+    setLivePractice(null);
     sceneModeRef.current = "prep";
     nudgedRef.current = false;
     segCacheRef.current = {};
@@ -885,6 +907,7 @@ export default function LiveTutor() {
     presentationRef.current = null;
     setSegIndex(null);
     setSceneMode("prep");
+    setLivePractice(null);
   };
 
   // The single lesson control: stop the lesson and land on the wrap-up
@@ -923,9 +946,25 @@ export default function LiveTutor() {
     presentationRef.current = null;
     setSegIndex(null);
     setSceneMode("prep");
+    setLivePractice(null);
     setPhase("asking");
     voice.updateSession(withProfile(openQuestionInstructions(p)), [START_TOPIC_TOOL]);
     voice.requestResponse("Ask the student what they would like to learn next, then wait.");
+  };
+
+  // Everything the professor has actually taught in this lesson: its spoken
+  // explanations, the diagram's parts and steps, and the active example.
+  // Practice questions are checked against it.
+  const taughtText = () => {
+    const sc = tutorRef.current.getScene();
+    const ex = directorRef.current.dsState();
+    return [
+      ...directorRef.current.teaching.professor.slice(-16).map((p) => p.text),
+      voice.tutorText,
+      ...(sc?.objects ?? []).map((o) => `${o.label ?? ""} ${(o.items ?? []).join(" ")} ${o.content ?? ""}`),
+      ...(sc?.sequence ?? []).map((s) => `${s.description ?? ""} ${s.label ?? ""}`),
+      ex ? `${sc?.ds?.kind ?? ""} ${ex.items.join(" ")}` : ""
+    ].join(" ");
   };
 
   // --- Practice tracking: the scene reports the student's actual response ---
@@ -938,29 +977,30 @@ export default function LiveTutor() {
     });
     const m = mapRef.current;
     const node = m?.nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    const idx = m.nodes.findIndex((n) => n.id === nodeId);
-    const nextNode = m.nodes[idx + 1];
+    const about = node?.label ?? "this part of the lesson";
+    const nextNode = node ? m.nodes[m.nodes.findIndex((n) => n.id === nodeId) + 1] : null;
     if (entry.correct) {
       voice.tellTutor(
-        `(The student answered the practice for "${node.label}" correctly, after ${entry.attempts} attempt(s)${
+        `(The student answered your practice question about "${about}" correctly, after ${entry.attempts} attempt(s)${
           entry.hints ? ` with ${entry.hints} hint(s)` : ""
-        }. Praise them in one short sentence, then call move_to_node with node_id "${nextNode ? nextNode.id : "wrap_up"}".)`
+        }. Praise them in one short sentence, then ${
+          node ? `call move_to_node with node_id "${nextNode ? nextNode.id : "wrap_up"}"` : "continue teaching from where you were"
+        }.)`
       );
+      // Without an outline there is no next topic to switch to: return to the diagram.
+      if (!node) setTimeout(() => setSceneMode((mode) => (mode === "quiz" ? "present" : mode)), 2500);
     } else {
       voice.tellTutor(
-        `(The student tried the practice for "${node.label}" and missed. Encourage them to try again in your own words, without revealing the answer. Do not call any function yet.)`
+        `(The student tried your practice question about "${about}" and missed. Encourage them to try again in your own words, without revealing the answer. Do not call any function yet.)`
       );
     }
   };
 
   const handleStuck = (nodeId) => {
     const node = mapRef.current?.nodes.find((n) => n.id === nodeId);
-    if (node) {
-      voice.tellTutor(
-        `(The student missed twice on the practice for "${node.label}". Re-teach this idea in very simple everyday words, then invite them to try the last choice.)`
-      );
-    }
+    voice.tellTutor(
+      `(The student missed twice on your practice question about "${node?.label ?? "this part of the lesson"}". Re-teach this idea in very simple words, using the same example from your lesson, then invite them to try the last choice.)`
+    );
   };
 
   // --- Local saving (prototype: this browser on this device only) ---
@@ -1056,7 +1096,11 @@ export default function LiveTutor() {
   return (
     <LessonScene
       stage={stage}
-      node={activeNode}
+      node={
+        sceneMode === "quiz"
+          ? { ...(activeNode ?? { id: "opening", label: questionRef.current.slice(0, 80) }), practice: livePractice }
+          : activeNode
+      }
       mode={sceneMode}
       visual={presentation?.visual ?? null}
       steps={presentation}
