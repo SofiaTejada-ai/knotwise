@@ -1,32 +1,29 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Mic, FileSearch, ShieldCheck, ArrowRight, LineChart } from "lucide-react";
+import { Mic, FileText, ArrowRight, Workflow, RotateCcw } from "lucide-react";
 import SessionHistory from "@/components/home/SessionHistory";
 
-const ROUTES = [
+// Everything happens inside Live Tutor; these describe what it does.
+const FEATURES = [
   {
-    to: "/scholarviz",
     icon: Mic,
-    title: "General Questions",
-    text: "Ask any question out loud or typed. A patient professor explains it step by step on an animated canvas you can drag."
+    title: "A professor you talk to",
+    text: "Ask any question out loud and interrupt whenever you like. The professor explains it calmly, at your pace."
   },
   {
-    to: "/research",
-    icon: FileSearch,
-    title: "Research",
-    text: "Upload a class document and learn it with clear diagrams, exact quotes from your material, and short checks."
+    icon: Workflow,
+    title: "Diagrams that move with the lesson",
+    text: "Values travel between parts, the camera follows, and the diagram grows when you ask why or what if."
   },
   {
-    to: "/graph-lesson",
-    icon: LineChart,
-    title: "Function Graphs",
-    text: "Guess first, then drag a slider and watch a line, curve or wave change. Works offline."
+    icon: FileText,
+    title: "Your own class material",
+    text: "Add lecture slides, papers or notes (PDF, Word, PowerPoint). The professor teaches from them and says where each idea comes from."
   },
   {
-    to: "/lesson",
-    icon: ShieldCheck,
-    title: "Practice Lesson",
-    text: "A guided lesson that teaches you to spot the red flags in a scam text message, with sources you can verify."
+    icon: RotateCcw,
+    title: "Replays and new examples",
+    text: "Say \"show that again, slower\" or \"give me another example\". It adapts to how you learn during the session."
   }
 ];
 
@@ -39,9 +36,7 @@ export default function Home() {
             Knotwise
           </Link>
           <nav className="flex items-center gap-6 text-sm text-slate-600">
-            <Link to="/scholarviz" className="hover:text-slate-900">Ask a question</Link>
-            <Link to="/research" className="hover:text-slate-900">Research</Link>
-            <Link to="/lesson" className="hover:text-slate-900">Practice lesson</Link>
+            <Link to="/livetutor" className="hover:text-slate-900">Live Tutor</Link>
           </nav>
         </div>
       </header>
@@ -54,39 +49,36 @@ export default function Home() {
           One patient tutor. Any question.
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
-          Knotwise explains ideas out loud, draws them as pictures and diagrams, and shows you the
-          official sources behind every rule, so you can check everything yourself.
+          Knotwise explains ideas out loud and draws them as animated diagrams, from any question or from
+          your own class material, so you can see exactly how things work.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
-            to="/scholarviz"
+            to="/livetutor"
             className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-700"
           >
-            Ask a question <ArrowRight className="h-4 w-4" />
+            Start Live Tutor <ArrowRight className="h-4 w-4" />
           </Link>
           <Link
-            to="/research"
+            to="/livetutor"
             className="inline-flex items-center rounded-lg border border-slate-300 px-6 py-3 text-sm font-medium text-slate-700 transition-colors hover:border-slate-500 hover:text-slate-900"
           >
-            Study a document
+            Learn from my class material
           </Link>
         </div>
       </section>
 
       <section className="mx-auto max-w-6xl px-6 pb-20">
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {ROUTES.map((route) => (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map((f) => (
             <Link
-              key={route.to}
-              to={route.to}
+              key={f.title}
+              to="/livetutor"
               className="group rounded-2xl border border-slate-200 bg-white p-6 transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
             >
-              <route.icon className="h-8 w-8 text-slate-900" />
-              <h2 className="mt-4 font-heading text-lg font-semibold text-slate-900">{route.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">{route.text}</p>
-              <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-slate-900">
-                Open <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
+              <f.icon className="h-8 w-8 text-slate-900" />
+              <h2 className="mt-4 font-heading text-lg font-semibold text-slate-900">{f.title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">{f.text}</p>
             </Link>
           ))}
         </div>

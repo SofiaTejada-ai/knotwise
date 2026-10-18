@@ -27,6 +27,7 @@ export default function LessonScene({
   onStop,
   onAttempt,
   onStuck,
+  footer = null, // document control, always at the bottom
   reducedMotion = false
 }) {
   const fade = reducedMotion ? { duration: 0 } : { duration: 0.4 };
@@ -52,7 +53,7 @@ export default function LessonScene({
 
       {/* voice trouble is the only quiet extra: it appears only on an error */}
       {voiceStatus === "error" && (
-        <div className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2">
+        <div className="absolute bottom-24 left-1/2 z-20 -translate-x-1/2">
           <StatusPill status={voiceStatus} onRetry={onRetryVoice} />
         </div>
       )}
@@ -94,7 +95,7 @@ export default function LessonScene({
 
       {/* optional quiet captions */}
       {captionsOn && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 px-6">
+        <div className={`pointer-events-none absolute inset-x-0 z-10 px-6 ${footer ? "bottom-14" : "bottom-4"}`}>
           <p
             aria-live="polite"
             data-testid="caption-line"
@@ -104,6 +105,8 @@ export default function LessonScene({
           </p>
         </div>
       )}
+
+      {footer && <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center px-4">{footer}</div>}
     </div>
   );
 }

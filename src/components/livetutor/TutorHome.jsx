@@ -5,11 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 // Knotwise live tutor start screen: no setup quiz, just start talking.
-export default function TutorHome({ onStart, error, busy }) {
+export default function TutorHome({ onStart, error, busy, footer = null }) {
   const [typedQuestion, setTypedQuestion] = useState("");
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 py-10">
       <div className="w-full max-w-xl space-y-6 rounded-2xl border border-slate-200 bg-white p-8">
         <div className="text-center">
           <h1 className="font-heading text-3xl font-semibold text-slate-800">Knotwise Live Tutor</h1>
@@ -36,7 +36,11 @@ export default function TutorHome({ onStart, error, busy }) {
           <Mic className="h-5 w-5" />
           {busy ? "Building your learning map..." : "Start the tutor"}
         </Button>
+        <p className="text-center text-xs text-slate-400">
+          Studying your own class material? Add it below and the professor teaches from it.
+        </p>
       </div>
+      {footer}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   SHOW_SEGMENT_TOOL,
   CONFIRM_UNDERSTANDING_TOOL,
   MOVE_NODE_TOOL,
+  SEARCH_DOCUMENT_TOOL,
   DIRECTOR_TOOLS,
   openQuestionInstructions,
   teachingInstructions,
@@ -22,6 +23,18 @@ import { useLessonOrchestrator } from "@/hooks/useLessonOrchestrator";
 import { useAnimationTutor } from "@/hooks/useAnimationTutor";
 import { useGuidedLesson } from "@/hooks/useGuidedLesson";
 import LiveSceneStage from "@/components/livetutor/LiveSceneStage";
+import DocumentBar from "@/components/livetutor/DocumentBar";
+import {
+  validateFile,
+  extractDocx,
+  extractPptx,
+  sectionsFromPagedText,
+  buildDocument,
+  searchResult,
+  groundingFor,
+  documentInstructions,
+  outline
+} from "@/lib/documentRag";
 
 // Animated-scene steps become the professor's spoken segments.
 function sceneToSegments(scene) {
@@ -40,7 +53,7 @@ import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
 import { useAutoCamera } from "@/hooks/useAutoCamera";
 import { detectKind, buildDsScene } from "@/lib/dsEngine";
 
-const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
+const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, SEARCH_DOCUMENT_TOOL, ...DIRECTOR_TOOLS];
 
 // cyber8LiveTutor: the student asks a question, the tutor plans the lesson
 // length itself, then teaches topic by topic in one immersive scene. The
@@ -61,6 +74,11 @@ export default function LiveTutor() {
   const [presentation, setPresentation] = useState(null); // segments of the active topic
   const [segIndex, setSegIndex] = useState(null); // segment being spoken / shown
   const [sceneMode, setSceneMode] = useState("prep"); // prep | present | quiz
+  // The student's own class material: { status, name, sections, unit, error }.
+  // The searchable document itself lives in docRef.
+  const [doc, setDoc] = useState(null);
+  const docRef = useRef(null);
+  const docSeqRef = useRef(0);
 
   const voice = useRealtimeVoice();
   const orch = useLessonOrchestrator();
@@ -168,10 +186,12 @@ export default function LiveTutor() {
   const learner = directorRef.current.learner;
   const lastInstrRef = useRef(null);
   const speechRef = useRef(null);
+  // Instructions always end with the active document (if any) and the
+  // learner profile, so both survive every topic change and reconnect.
   const withProfile = (instructions) => {
     lastInstrRef.current = instructions;
-    const prof = learner.profileText();
-    return prof ? `${instructions}\n\n${prof}` : instructions;
+    const extra = [docRef.current ? documentInstructions(docRef.current) : "", learner.profileText()].filter(Boolean).join("\n\n");
+    return extra ? `${instructions}\n\n${extra}` : instructions;
   };
   useEffect(() => {
     let timer = null;
@@ -272,7 +292,9 @@ export default function LiveTutor() {
         node.id === "opening"
           ? question
           : `${node.label}: ${node.description ?? ""}. Part of a lesson about: ${mapRef.current?.title || question}`;
-      return sceneToSegments(await tutorRef.current.buildScene(prompt));
+      // With class material uploaded, the diagram is drawn from its passages.
+      const grounding = docRef.current ? groundingFor(docRef.current, `${prompt} ${question ?? ""}`) : "";
+      return sceneToSegments(await tutorRef.current.buildScene(prompt, grounding || undefined));
     } catch (err) {
       // continue with the simple diagram
     }
@@ -512,8 +534,75 @@ export default function LiveTutor() {
     }
   };
 
+  // --- Class material (RAG): validate, extract, index, tell the professor ---
+  const loadDocument = async (file) => {
+    const v = validateFile(file);
+    const name = String(file?.name ?? "document");
+    const token = ++docSeqRef.current;
+    const set = (next) => docSeqRef.current === token && setDoc(next);
+    if (!v.ok) {
+      set({ status: "error", name, error: v.error });
+      return;
+    }
+    try {
+      let sections;
+      if (v.kind === "pdf") {
+        set({ status: "uploading", name });
+        const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+        set({ status: "reading", name });
+        const res = await base44.functions.invoke("extractDocument", { file_uri, fileName: name });
+        const text = res?.data?.document?.fullText;
+        if (!text) throw new Error(res?.data?.error || "No readable text was found in this document.");
+        sections = sectionsFromPagedText(text);
+      } else {
+        set({ status: "reading", name });
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        sections = v.kind === "docx" ? extractDocx(bytes) : extractPptx(bytes);
+      }
+      set({ status: "indexing", name });
+      const built = buildDocument(name, sections);
+      if (docSeqRef.current !== token) return;
+      docRef.current = built;
+      setDoc({ status: "ready", name, sections: built.sections, unit: built.unit });
+      documentChanged(built);
+    } catch (err) {
+      set({ status: "error", name, error: err?.response?.data?.error || err?.message || "The document could not be read." });
+    }
+  };
+
+  const removeDocument = () => {
+    docSeqRef.current += 1;
+    docRef.current = null;
+    setDoc(null);
+    documentChanged(null);
+  };
+
+  // The live professor learns about the material at once: its instructions
+  // are refreshed, and it reacts in one sentence if a lesson is under way.
+  const documentChanged = (d) => {
+    if (lastInstrRef.current) voice.updateSession(withProfile(lastInstrRef.current));
+    if (!d || !["listening", "speaking", "thinking"].includes(voice.status)) return;
+    if (phase === "teaching") {
+      voice.tellTutor(
+        `(The student just uploaded their class material "${d.name}" (${d.sections} ${d.unit}). Acknowledge it in one short sentence. From now on ground your teaching in it with search_document, starting with how it relates to what you are teaching now.)`
+      );
+    } else if (phase === "asking") {
+      voice.tellTutor(
+        `(The student uploaded their class material "${d.name}". Its outline: ${outline(d, 10) || "no headings"}. Acknowledge it in one short sentence and ask which part they want to learn first, then call start_topic.)`
+      );
+    }
+  };
+
   // --- Realtime tool calls from the tutor ---
   const handleToolCall = async ({ name, arguments: args, call_id }) => {
+    if (name === "search_document") {
+      const d = docRef.current;
+      voice.sendFunctionCallOutput(
+        call_id,
+        d ? searchResult(d, String(args?.query ?? "")) : "No class material is uploaded. Teach from general knowledge."
+      );
+      return;
+    }
     if (DIRECTOR_TOOL_NAMES.includes(name)) {
       // Professor's visual commands: validated and queued by the director.
       if (!tutorRef.current.getScene() && !["ds_start", "create_example"].includes(name)) {
@@ -728,7 +817,7 @@ export default function LiveTutor() {
       // Voice-first: the tutor greets, listens, and identifies the topic.
       setPhase("asking");
       voice.start(profileContext(p), {
-        instructions: openQuestionInstructions(p),
+        instructions: withProfile(openQuestionInstructions(p)),
         tools: [START_TOPIC_TOOL],
         onToolCall: handleToolCall
       });
@@ -754,7 +843,7 @@ export default function LiveTutor() {
       });
     } else if (p) {
       voice.start(profileContext(p), {
-        instructions: openQuestionInstructions(p),
+        instructions: withProfile(openQuestionInstructions(p)),
         tools: [START_TOPIC_TOOL],
         onToolCall: handleToolCall
       });
@@ -818,7 +907,7 @@ export default function LiveTutor() {
     setSegIndex(null);
     setSceneMode("prep");
     setPhase("asking");
-    voice.updateSession(openQuestionInstructions(p), [START_TOPIC_TOOL]);
+    voice.updateSession(withProfile(openQuestionInstructions(p)), [START_TOPIC_TOOL]);
     voice.requestResponse("Ask the student what they would like to learn next, then wait.");
   };
 
@@ -874,12 +963,13 @@ export default function LiveTutor() {
   }, [map, doneNodes, practiceLog, notes, phase]);
 
   // --- Screens ---
+  const documentBar = <DocumentBar doc={doc} onPick={loadDocument} onRemove={removeDocument} />;
   if (phase === "home") {
     const prepareSession = (p, typedQuestion) => {
       setPending({ profile: p, typedQuestion });
       setPhase("ready");
     };
-    return <TutorHome onStart={prepareSession} error={homeError} busy={buildingMap} />;
+    return <TutorHome onStart={prepareSession} error={homeError} busy={buildingMap} footer={documentBar} />;
   }
 
   if (phase === "ready") {
@@ -902,6 +992,7 @@ export default function LiveTutor() {
           onRetry={() => startSession(profileRef.current, null)}
           onEnd={endSession}
         />
+        <div className="fixed inset-x-0 bottom-3 z-50 flex justify-center px-4">{documentBar}</div>
       </div>
     );
   }
@@ -961,6 +1052,7 @@ export default function LiveTutor() {
       onStop={stopLesson}
       onAttempt={handleAttempt}
       onStuck={handleStuck}
+      footer={documentBar}
       reducedMotion={!!profile?.reducedMotion}
     />
   );

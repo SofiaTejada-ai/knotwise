@@ -62,6 +62,18 @@ export const MOVE_NODE_TOOL = {
   }
 };
 
+export const SEARCH_DOCUMENT_TOOL = {
+  type: "function",
+  name: "search_document",
+  description:
+    "Search the student's uploaded class material (PDF, Word or PowerPoint) and get the most relevant passages with their page, slide or section. Call it before explaining anything the document may cover.",
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string", description: "A few keywords for what you are about to teach" } },
+    required: ["query"]
+  }
+};
+
 const idParam = (d) => ({ type: "string", description: d });
 const SPEED = { type: "string", enum: ["normal", "slower", "very_slow"], description: "Visual speed for this replay: slower = 0.65x, very_slow = 0.4x" };
 const tool = (name, description, properties = {}, required = []) => ({

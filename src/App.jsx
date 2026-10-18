@@ -1,18 +1,13 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import Home from './pages/Home';
-import SafeSteps from './pages/SafeSteps';
-import ScholarViz from './pages/ScholarViz';
 import LiveTutor from './pages/LiveTutor';
-import ReviewQuiz from './pages/ReviewQuiz';
-import Research from './pages/Research';
-import FunctionLesson from './pages/FunctionLesson';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -42,13 +37,13 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       {/* Add your page Route elements here */}
+      {/* Knotwise has two pages: Home and Live Tutor. Earlier learning
+          routes (their components are reused inside Live Tutor) now land there. */}
       <Route path="/" element={<Home />} />
-      <Route path="/lesson" element={<SafeSteps />} />
-      <Route path="/scholarviz" element={<ScholarViz />} />
       <Route path="/livetutor" element={<LiveTutor />} />
-      <Route path="/review" element={<ReviewQuiz />} />
-      <Route path="/research" element={<Research />} />
-      <Route path="/graph-lesson" element={<FunctionLesson />} />
+      {["/lesson", "/scholarviz", "/graph", "/graph-lesson", "/research", "/review"].map((path) => (
+        <Route key={path} path={path} element={<Navigate to="/livetutor" replace />} />
+      ))}
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

@@ -1,7 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { PartyPopper, MessageCircleQuestion, Home, ClipboardList } from "lucide-react";
-import { Link } from "react-router-dom";
+import { PartyPopper, MessageCircleQuestion, Home } from "lucide-react";
 
 // End-of-lesson card: what was practiced, and where to go next.
 export default function WrapUpCard({ map, practiceLog, onNewQuestion, onEnd }) {
@@ -22,13 +21,6 @@ export default function WrapUpCard({ map, practiceLog, onNewQuestion, onEnd }) {
         <p className="text-xs text-slate-400">
           Your notes, practice results, and progress are saved only in this browser on this device.
         </p>
-        <Link
-          to="/review"
-          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-        >
-          <ClipboardList className="h-4 w-4" />
-          Open Review &amp; Quiz
-        </Link>
         <div className="flex flex-wrap gap-2">
           <Button className="gap-1" onClick={onNewQuestion}>
             <MessageCircleQuestion className="h-4 w-4" />

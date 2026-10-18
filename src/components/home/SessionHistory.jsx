@@ -18,7 +18,7 @@ export default function SessionHistory() {
     savedAt: s.savedAt,
     title: s.docTitle || s.fileName || "Research session",
     kind: "Research",
-    to: "/research"
+    to: "/livetutor"
   }));
   const recent = [...tutor, ...research].sort((a, b) => b.savedAt - a.savedAt).slice(0, 6);
 
