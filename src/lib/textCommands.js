@@ -25,16 +25,17 @@ export function createTextCommands({ api, find, needNode, dsStructId }) {
     await api.canvas()?.focusNode(id, z);
   };
   const emphasize = (id) => api.canvas()?.highlightNode(id);
-  const place = (near_id, x, y) => {
+  const place = (near_id, x, y, text = "") => {
     if (Number.isFinite(Number(x)) && Number.isFinite(Number(y)) && x !== null && y !== null && x !== "" && y !== "")
       return { x: clamp(Number(x), 60, 840), y: clamp(Number(y), 40, 510) };
     const n = near_id && find(near_id);
     if (n) return { x: clamp(n.x, 140, 760), y: clamp(n.y + 105, 40, 515) };
     // First free spot that does not cover another part or text.
     const others = api.scene()?.objects ?? [];
+    const half = Math.min(300, Math.max(...String(text).split("\n").map((l) => l.length), 4) * 4.6 + 14);
     for (const cy of [60, 490, 150, 400, 270])
-      for (const cx of [450, 230, 670])
-        if (others.every((o) => Math.abs(o.x - cx) > 190 || Math.abs(o.y - cy) > 70)) return { x: cx, y: cy };
+      for (const cx of [450, Math.max(half + 10, 230), Math.min(890 - half, 670)])
+        if (others.every((o) => Math.abs(o.x - cx) > half + 80 || Math.abs(o.y - cy) > 75)) return { x: cx, y: cy };
     return { x: 450, y: 60 + (texts().length % 6) * 72 };
   };
   const listing = () => texts().map((o) => `${o.id}: ${o.text}`).join("; ") || "none";
@@ -62,7 +63,7 @@ export function createTextCommands({ api, find, needNode, dsStructId }) {
       if (ex && !TEXT_KINDS.includes(ex.type)) return `Not done: "${id}" is already a diagram part. Choose another id.`;
       const lbl = label ? String(label).slice(0, 24) : ex?.label ?? "";
       if (ex) tutor().updateObject(id, { type: kind, text, highlight: "", label: lbl });
-      else tutor().addObject({ id, type: kind, text, highlight: "", label: lbl, ...place(near_id, x, y) });
+      else tutor().addObject({ id, type: kind, text, highlight: "", label: lbl, ...place(near_id, x, y, text) });
       await look(id);
       await emphasize(id);
       return `On screen now (${kind} "${id}"): ${text}. Explain it, and use highlight_token to point at an exact part of it.`;
@@ -140,7 +141,7 @@ export function createTextCommands({ api, find, needNode, dsStructId }) {
         return `Not done: step ${chk.badStep} "${list[chk.badStep - 1].expression}" is not valid, because x = ${chk.x} solves the final step but not this one. Fix the steps and call again.`;
       const ex = find(id);
       if (ex && !TEXT_KINDS.includes(ex.type)) return `Not done: "${id}" is a diagram part.`;
-      if (!ex) tutor().addObject({ id, type: "math_expression", text: list[0].expression, highlight: "", label: "", ...place(near_id) });
+      if (!ex) tutor().addObject({ id, type: "math_expression", text: list[0].expression, highlight: "", label: "", ...place(near_id, null, null, list[0].expression) });
       args._steps = list; // kept for exact replays
       await look(id);
       await showSteps(id, list);
