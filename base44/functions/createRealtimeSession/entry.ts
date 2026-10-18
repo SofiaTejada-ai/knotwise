@@ -29,7 +29,7 @@ export default async function(req) {
     // cyber8LiveTutor sessions may bring their own tutor instructions and
     // function tools. Bound and validate everything before passing it on.
     const rawInstructions = typeof body.instructions === 'string' ? body.instructions.trim() : '';
-    const instructions = rawInstructions ? rawInstructions.slice(0, 6000) : null;
+    const instructions = rawInstructions ? rawInstructions.slice(0, 24000) : null;
     const tools = Array.isArray(body.tools)
       ? body.tools
           .filter(
@@ -43,7 +43,7 @@ export default async function(req) {
               t.parameters &&
               typeof t.parameters === 'object'
           )
-          .slice(0, 4)
+          .slice(0, 48)
           .map((t) => ({
             type: 'function',
             name: t.name,

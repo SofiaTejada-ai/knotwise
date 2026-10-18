@@ -426,7 +426,13 @@ const SHAPES = {
   gear: Gear,
   flag: Flag,
   bug: Bug,
-  robot: Robot
+  robot: Robot,
+  text_label: TextObject,
+  code_block: TextObject,
+  math_expression: TextObject,
+  variable_value: TextObject,
+  array_cell: TextObject,
+  expression_token: TextObject
 };
 
 export function SceneObject({ obj }) {
@@ -480,6 +486,13 @@ export function labelOffset(obj) {
       return 22 + 18;
     case "bucket":
       return 26 + 18;
+    case "text_label":
+    case "code_block":
+    case "math_expression":
+    case "variable_value":
+    case "array_cell":
+    case "expression_token":
+      return null; // text objects label themselves
     case "memory_block": {
       const cells = Array.isArray(obj.cells) ? obj.cells : ["", "", "", ""];
       const rows = Math.max(1, ...cells.map((c) => wrapLines(String(c), 14).length));
