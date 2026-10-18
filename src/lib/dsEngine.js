@@ -118,8 +118,8 @@ export function requestedValue(text) {
 
 export const defaultExampleText = (kind, value = DEFAULT_EXAMPLE.value) =>
   kind === "queue"
-    ? `Queue (front to rear): [3, 7]. Plan: enqueue(${value}) then dequeue().`
-    : `Stack (bottom to top): [3, 7]. Plan: push(${value}) then pop().`;
+    ? `Queue (front to rear): [3, 7]. Plan: enqueue(${value}), enqueue(${value === 25 ? 40 : 25}), peek(), dequeue(), dequeue().`
+    : `Stack (bottom to top): [3, 7]. Plan: push(${value}), push(${value === 25 ? 40 : 25}), peek(), pop(), pop().`;
 
 let counter = 0;
 export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
@@ -127,6 +127,7 @@ export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
   const struct = createStruct(kind, start);
   const q = kind === "queue";
   const id = `${kind}_${Date.now().toString(36)}_${counter++}`;
+  const second = value === 25 ? 40 : 25;
   const objects = q
     ? [
         { id: "incoming", type: "plate", label: "enqueue at rear", x: 780, y: 275 },
@@ -162,7 +163,11 @@ export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
       outId: q ? "outgoing" : "gate",
       statusId: "status",
       initial: [...struct.items],
-      plan: q ? [{ op: "enqueue", value }, { op: "dequeue" }] : [{ op: "push", value }, { op: "pop" }]
+      // Long enough to teach the rule, not just show it: two adds, a read,
+      // then removals that reveal the order (and the second value leaving).
+      plan: q
+        ? [{ op: "enqueue", value }, { op: "enqueue", value: second }, { op: "peek" }, { op: "dequeue" }, { op: "dequeue" }]
+        : [{ op: "push", value }, { op: "push", value: second }, { op: "peek" }, { op: "pop" }, { op: "pop" }]
     }
   };
 }

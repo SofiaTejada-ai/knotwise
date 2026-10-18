@@ -1,5 +1,5 @@
 import { nodeForStep } from "@/hooks/useGuidedLesson";
-import { timing, parseSpeed } from "@/lib/animTiming";
+import { timing, parseSpeed, scaled, DUR } from "@/lib/animTiming";
 import { createTextCommands, TEXT_TOOL_NAMES } from "@/lib/textCommands";
 import { trace } from "@/lib/lessonTrace";
 import { createHistory } from "@/lib/teachingHistory";
@@ -65,7 +65,12 @@ export const DIRECTOR_TOOL_NAMES = [
 const STATE_KEYS = ["items", "value", "label", "color", "text"];
 const TIMEOUT_MS = 15000;
 const PAUSE_NAMES = ["pause_visuals", "resume_visuals", "pause_animation", "resume_animation"];
+// Commands that move nothing: the node picture may stay visible during them.
+// Every other command moves values or the camera along a path, and the
+// picture is hidden so it never covers the operation being taught.
+const STILL_NAMES = ["focus_node", "show_overview", "highlight_node", "ds_state", "get_teaching_history", "hide_text", ...PAUSE_NAMES];
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const hold = (k = 1) => delay(scaled(DUR.hold * k) * 1000);
 
 export function createDirector(api) {
   let chain = Promise.resolve();
@@ -152,6 +157,7 @@ export function createDirector(api) {
     if (replay) setItems(d, rec.before);
     setStatus(d, `${rec.op}(${rec.value !== undefined && rec.op === KINDS[d.meta.kind].add ? rec.value : ""})`);
     await cam;
+    await hold(); // the student reads the operation before anything moves
     if (!rec.ok) {
       await canvas?.highlightNode(structId);
       setStatus(d, rec.error === "empty" ? `${rec.op}() on empty: nothing removed` : `${rec.op}() refused`);
@@ -164,18 +170,22 @@ export function createDirector(api) {
       trace("state_committed", { id: structId, op: rec.op });
       await canvas?.highlightNode(structId);
       setStatus(d, `${rec.op}(${rec.value}) added`);
+      await hold();
     } else if (rec.op === info.remove) {
-      setStatus(d, `${rec.op}(): top is ${rec.returned}`);
+      setStatus(d, `${rec.op}(): ${d.meta.kind === "queue" ? "front" : "top"} is ${rec.returned}`);
       await canvas?.highlightNode(structId);
+      await hold();
       const out = canvas?.transfer(structId, outId, rec.returned);
-      await delay(250);
+      await delay(scaled(0.6) * 1000);
       setItems(d, rec.after);
       trace("state_committed", { id: structId, op: rec.op });
       await out;
       setStatus(d, `${rec.op}() returned ${rec.returned}`);
+      await hold();
     } else {
       await canvas?.highlightNode(structId);
       setStatus(d, `peek() = ${rec.returned}`);
+      await hold();
     }
   };
 
@@ -184,7 +194,7 @@ export function createDirector(api) {
     const detail = rec.ok
       ? `Before: [${rec.before.join(", ")}]. After: [${rec.after.join(", ")}]. ${rec.returned !== undefined ? `Returned: ${rec.returned}. ` : ""}`
       : "";
-    return `${head}${exampleHeader(d)} ${explainResult(rec)} ${detail}The diagram now shows exactly this. Current state: ${summarize(d.struct)} ${RULES[d.meta.kind]} Explain which element was affected and why, using only these real values. Mention complexity only briefly if it helps: ${COMPLEXITY[d.meta.kind]}`;
+    return `${head}${exampleHeader(d)} ${explainResult(rec)} ${detail}The diagram now shows exactly this. Current state: ${summarize(d.struct)} ${RULES[d.meta.kind]} Explain slowly, like a teacher at the board: point at the part that changed, say which element was affected and why, using only these real values. Do not rush into the next operation; every second operation or so, first ask the student to predict what the next one will do and wait for their answer. Mention complexity only briefly if it helps: ${COMPLEXITY[d.meta.kind]}`;
   };
 
   // Teaching history + semantic navigation (revisit, replay, retrace, resume).
@@ -367,19 +377,22 @@ export function createDirector(api) {
     pending += 1;
     trace("cmd_queued", { name, pending });
     const job = chain.then(async () => {
+      let moving = false;
       try {
         if (my !== epoch) {
           trace("cmd_cancelled", { name });
           return "Cancelled because the student interrupted. Answer them, then continue from the current state.";
         }
         // Adaptive pace: shorter transitions while commands are waiting.
-        timing.scale = pending > 2 ? 0.5 : pending > 1 ? 0.7 : 1;
+        timing.scale = pending > 2 ? 0.75 : pending > 1 ? 0.85 : 1;
         // Temporary replay speed for this one command ("show it again, slower").
         timing.playback = args.speed !== undefined ? parseSpeed(args.speed) : 1;
         if (timing.playback < 1) timing.scale = 1;
         const limit = (TIMEOUT_MS + (Array.isArray(args.steps) ? args.steps.length * 2500 : 0)) / timing.playback;
         history.push({ name, args, at: Date.now(), scene: api.scene()?.scene_id });
         trace("cmd_started", { name });
+        moving = !STILL_NAMES.includes(name);
+        if (moving) api.setMotion?.(true);
         const t0 = performance.now();
         const before = rv.snapshot();
         let timer;
@@ -406,6 +419,7 @@ export function createDirector(api) {
         reconcile();
         return `Not done: that visual failed (${String(err?.message || err).slice(0, 80)}). Tell the student it did not work and explain in words.`;
       } finally {
+        if (moving) api.setMotion?.(false);
         timing.playback = 1;
         pending -= 1;
         if (pending <= 0) {
@@ -433,7 +447,7 @@ export function createDirector(api) {
   const dsIntro = () => {
     const d = getDs();
     return d
-      ? `${exampleHeader(d)}. Use exactly these values when you speak. ${dsFacts(d)} This is a REAL data structure. The professor chooses operations with ds_operation (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. Plan for the demo: ${d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(" then ")}.`
+      ? `${exampleHeader(d)}. Use exactly these values when you speak. ${dsFacts(d)} This is a REAL data structure. The professor chooses operations with ds_operation (${KINDS[d.meta.kind].ops.join(", ")}); the app executes them and shows the true result. Lesson plan, one operation at a time with an explanation after each: ${d.meta.plan.map((p) => `${p.op}(${p.value ?? ""})`).join(", then ")}. After that, if the student is following, give a second example with new values (create_example) and connect it to an everyday ${d.meta.kind === "queue" ? "line of people waiting" : "stack of plates or an undo button"}.`
       : "";
   };
 

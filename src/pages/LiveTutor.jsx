@@ -109,6 +109,17 @@ export default function LiveTutor() {
   animRef.current = tutor.isAnimating;
   const canvasRef = useRef(null);
   const moveTimerRef = useRef(null);
+  // Values or the camera are moving: the node picture is hidden so it never
+  // covers the operation. It reappears a moment after the last move ends.
+  const [motion, setMotion] = useState(false);
+  const motionRef = useRef({ count: 0, timer: null });
+  const noteMotion = (on) => {
+    const m = motionRef.current;
+    m.count = Math.max(0, m.count + (on ? 1 : -1));
+    clearTimeout(m.timer);
+    if (m.count) setMotion(true);
+    else m.timer = setTimeout(() => setMotion(false), 1200);
+  };
   const guidedStatus =
     phase === "teaching" && sceneMode === "present" && segIndex != null
       ? voice.status === "listening"
@@ -145,6 +156,7 @@ export default function LiveTutor() {
         setSegIndex(i);
         setSceneMode("present");
       },
+      setMotion: (on) => noteMotion(on),
       waitIdle
     });
   }
@@ -536,7 +548,7 @@ export default function LiveTutor() {
           call_id,
           `The whole diagram was shown and the camera is now on "${(segs.scene.objects ?? []).find((o) => o.id === firstId)?.label || firstId}" with a simple picture above it. Diagram parts (id and label): ${parts}. ${dir.dsIntro()} Numbered steps: ${steps} ${
             meta ? `First give this one short everyday metaphor in your own words: "${meta}". ` : ""
-          }Then explain that first part in two short accurate sentences, then call play_step(1) and keep directing as your rules say.`
+          }Then explain that first part slowly, like a teacher at the board, in two to four short sentences, then call play_step(1) and keep directing as your rules say.`
         );
         return;
       }
@@ -545,7 +557,7 @@ export default function LiveTutor() {
           call_id,
           last
             ? `Diagram step ${i + 1} of ${segs.length} is highlighted on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" Then ask: "Does that make sense?" and wait for the student's answer. Do not call any function yet.`
-            : `Diagram step ${i + 1} of ${segs.length} is highlighted on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" As you finish speaking, call show_segment(${i + 1}). Keep a steady pace, no pause, no questions.`
+            : `Diagram step ${i + 1} of ${segs.length} is highlighted on screen: ${seg.idea}. Say exactly this: "${seg.spokenText}" As you finish speaking, call show_segment(${i + 1}). Keep a calm, unhurried teaching pace.`
         );
       } else {
         voice.sendFunctionCallOutput(
@@ -880,6 +892,7 @@ export default function LiveTutor() {
       tutor={tutor}
       canvasRef={canvasRef}
       guided={guided}
+      hideImage={motion || tutor.isAnimating}
       onMoveNode={handleMove}
       onSelectNode={handleSelect}
     />

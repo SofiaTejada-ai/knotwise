@@ -6,7 +6,7 @@ import CameraControls from "@/components/scholarviz/CameraControls";
 // The animated lesson inside Live Tutor: the persistent SVG diagram (GSAP
 // animation + camera) with the simple node picture floating above the focused
 // node. It is driven by the shared lesson state, never by a second professor.
-export default function LiveSceneStage({ tutor, canvasRef, guided, onMoveNode, onSelectNode }) {
+export default function LiveSceneStage({ tutor, canvasRef, guided, hideImage = false, onMoveNode, onSelectNode }) {
   return (
     <div
       data-testid="live-scene-stage"
@@ -24,7 +24,7 @@ export default function LiveSceneStage({ tutor, canvasRef, guided, onMoveNode, o
         onUpdateObject={tutor.updateObject}
         onSelectNode={onSelectNode}
       />
-      <NodeImagePanel url={guided.imageUrl} label={guided.focusedLabel} />
+      <NodeImagePanel url={guided.imageUrl} label={guided.focusedLabel} hidden={hideImage} />
       <CameraControls
         guided={guided.state.guidedModeEnabled}
         onZoomOut={guided.zoomOut}

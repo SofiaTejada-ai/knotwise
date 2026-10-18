@@ -219,7 +219,7 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
       showOverview: () => {
         camSeq.current += 1;
         dropDots();
-        return camTo(0, 0, 1, 0.7);
+        return camTo(0, 0, 1, 1.1);
       },
       focusNode,
       followConnection: async (a, b, { showDot = true } = {}) => {
@@ -232,13 +232,13 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
         if (showDot && travelRef.current) {
           dot = el("circle", { r: 8, cx: A.x, cy: A.y, fill: "#4f9eff", filter: "url(#packetGlow)", "data-cam-dot": "1" });
           travelRef.current.appendChild(dot);
-          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : scaled(1.2), ease: "power1.inOut" });
+          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : scaled(1.7), ease: "power1.inOut" });
         }
         const mv = viewFor({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, 1.2);
-        await camTo(mv.x, mv.y, 1.2, 0.5, "power1.in");
+        await camTo(mv.x, mv.y, 1.2, 0.8, "power1.in");
         if (camSeq.current !== mine) return; // a newer camera command took over
         const bv = viewFor(B, 1.7);
-        await camTo(bv.x, bv.y, 1.7, 0.6, "power2.out");
+        await camTo(bv.x, bv.y, 1.7, 0.9, "power2.out");
         if (dot) gsap.to(dot, { opacity: 0, duration: 0.3, onComplete: () => dot.remove() });
       },
       // Pulses a node (the "this is what we are talking about" highlight).
@@ -293,7 +293,8 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
           };
           gsap
             .timeline({ onComplete: cleanup })
-            .to(tok, { scale: 1, duration: reduced() ? 0 : scaled(0.3), ease: "back.out(2)" })
+            .to(tok, { scale: 1, duration: reduced() ? 0 : scaled(0.45), ease: "back.out(2)" })
+            .to({}, { duration: reduced() ? 0 : scaled(0.35) }) // let the student read the value before it moves
             .to(tok, { x: B.x, y: B.y, duration: dur, ease: "power1.inOut" }, ">")
             .to(line, { attr: { x2: B.x, y2: B.y }, duration: dur, ease: "power1.inOut" }, "<")
             .to(head, { opacity: 1, duration: reduced() ? 0 : scaled(DUR.arrow) }, `-=${reduced() ? 0 : scaled(DUR.arrow)}`)
