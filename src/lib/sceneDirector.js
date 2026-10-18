@@ -97,7 +97,13 @@ export function createDirector(api) {
     const sc = api.scene();
     if (!sc?.ds) return null;
     if (!ds || ds.sceneId !== sc.scene_id) {
-      ds = { sceneId: sc.scene_id, meta: sc.ds, struct: createStruct(sc.ds.kind, sc.ds.initial), ops: [], exampleId: `ex_${++exampleSeq}` };
+      // A topic change that redraws the same kind of structure keeps the
+      // active example (values and operation history); only an explicit
+      // create_example / ds_start starts a new one.
+      ds =
+        ds && sc.ds.carry && ds.meta.kind === sc.ds.kind
+          ? { ...ds, sceneId: sc.scene_id, meta: { ...sc.ds, initial: ds.meta.initial } }
+          : { sceneId: sc.scene_id, meta: sc.ds, struct: createStruct(sc.ds.kind, sc.ds.initial), ops: [], exampleId: `ex_${++exampleSeq}` };
     }
     return ds;
   };
@@ -298,8 +304,8 @@ export function createDirector(api) {
         .map((v) => (Number.isFinite(Number(v)) ? Number(v) : String(v)))
         .slice(0, 6);
       const sc = buildDsScene(kind, list.length ? list : undefined);
+      ds = null; // before the scene loads, so nothing carries the old example over
       api.loadScene(sc);
-      ds = null;
       await delay(150);
       const d = getDs();
       await api.guided().overview();
@@ -412,13 +418,17 @@ export function createDirector(api) {
     return job;
   };
 
-  // Student interruption: drop queued commands, freeze what is playing and
-  // keep the last committed state. Nothing is replayed on resume.
+  // Student interruption: drop queued commands and keep the last committed
+  // state. The command already playing runs to its end (a value transfer is
+  // under two seconds), because freezing GSAP here would leave its promise
+  // hanging until the timeout and block every later command.
   const interrupt = () => {
     epoch += 1;
-    trace("interrupt");
-    setPaused(true);
+    trace("interrupt", { pending });
   };
+
+  // After a scene is (re)loaded, make the picture show the committed example.
+  const syncScene = () => reconcile();
 
   const dsIntro = () => {
     const d = getDs();
@@ -430,6 +440,7 @@ export function createDirector(api) {
   return {
     run,
     interrupt,
+    syncScene,
     history,
     teaching: hist,
     revisit: rv.state,

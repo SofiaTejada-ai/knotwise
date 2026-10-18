@@ -1,5 +1,5 @@
 // Realtime session tools and tutor instructions for cyber8LiveTutor.
-import { detectKind, defaultExampleText } from "@/lib/dsEngine";
+import { detectKind, defaultExampleText, requestedValue, DEFAULT_EXAMPLE } from "@/lib/dsEngine";
 // The lesson is one immersive scene: the tutor presents each topic segment by
 // segment, and every spoken segment has its own matching picture that the
 // tutor puts on screen exactly when it reaches that idea.
@@ -315,7 +315,7 @@ export function streamingInstructions(question, profile) {
 
 RIGHT NOW: the student asked "${question}".${
     detectKind(question)
-      ? ` The diagram shows this ACTIVE EXAMPLE: ${defaultExampleText(detectKind(question))} Use exactly these numbers and no others; demonstrate with perform_operation once the steps arrive.`
+      ? ` The diagram shows this ACTIVE EXAMPLE: ${defaultExampleText(detectKind(question), requestedValue(question) ?? DEFAULT_EXAMPLE.value)} Use exactly these numbers and no others; demonstrate with perform_operation once the steps arrive.`
       : ""
   } Start explaining immediately in your own plain words; the diagram is being drawn alongside you and the detailed steps arrive in a moment. If the student speaks, answer conversationally and never mention preparing anything.`;
 }

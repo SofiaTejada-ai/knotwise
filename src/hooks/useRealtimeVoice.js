@@ -9,12 +9,23 @@ export function useRealtimeVoice() {
   const [error, setError] = useState(null);
   const [userTranscript, setUserTranscript] = useState("");
   const [tutorText, setTutorText] = useState("");
+  // Increments the moment the student starts talking (server VAD), long
+  // before the transcript arrives. Used to cancel queued visuals on barge-in.
+  const [bargeIns, setBargeIns] = useState(0);
+  const [lastServerError, setLastServerError] = useState(null);
 
   const pcRef = useRef(null);
   const dcRef = useRef(null);
   const micRef = useRef(null);
   const audioRef = useRef(null);
   const onToolCallRef = useRef(null);
+  // Response gating: only one model response may be active at a time, so
+  // response.create is held until the active one is done and every function
+  // call it emitted has been answered.
+  const responseActiveRef = useRef(false);
+  const openCallsRef = useRef(new Set()); // call ids emitted but not answered yet
+  const wantResponseRef = useRef(null); // null | { instructions? }
+  const awaitingCreatedRef = useRef(false);
 
   const cleanup = useCallback(() => {
     const dc = dcRef.current;
@@ -54,6 +65,28 @@ export function useRealtimeVoice() {
     }
   }, []);
 
+  // Sends the held response.create once nothing else is in flight.
+  const flushResponse = useCallback(() => {
+    const want = wantResponseRef.current;
+    if (!want || responseActiveRef.current || awaitingCreatedRef.current || openCallsRef.current.size) return;
+    wantResponseRef.current = null;
+    awaitingCreatedRef.current = true; // cleared by response.created or an error
+    sendEvent({ type: "response.create", ...(want.instructions ? { response: { instructions: want.instructions } } : {}) });
+  }, [sendEvent]);
+
+  const answerCall = useCallback(
+    (callId, output) => {
+      sendEvent({
+        type: "conversation.item.create",
+        item: { type: "function_call_output", call_id: callId, output: String(output ?? "") }
+      });
+      openCallsRef.current.delete(callId);
+      if (!wantResponseRef.current) wantResponseRef.current = {};
+      flushResponse();
+    },
+    [sendEvent, flushResponse]
+  );
+
   const handleEvent = useCallback((ev) => {
     const type = ev?.type ?? "";
     if (type === "session.created" || type === "session.updated") {
@@ -64,12 +97,15 @@ export function useRealtimeVoice() {
       setTutorText("");
       setUserTranscript("");
       setStatus("listening");
+      setBargeIns((n) => n + 1);
     } else if (type === "input_audio_buffer.speech_stopped") {
       setStatus("thinking");
     } else if (type === "conversation.item.input_audio_transcription.completed") {
       const text = typeof ev.transcript === "string" ? ev.transcript.trim() : "";
       if (text) setUserTranscript(text);
     } else if (type === "response.created") {
+      responseActiveRef.current = true;
+      awaitingCreatedRef.current = false;
       audioRef.current?.play().catch(() => {});
       setStatus((s) => (s === "listening" ? s : "thinking"));
     } else if (type === "response.audio.delta" || type === "response.output_audio.delta") {
@@ -88,15 +124,35 @@ export function useRealtimeVoice() {
           args = JSON.parse(item.arguments || "{}");
         } catch (err) {}
         setStatus("thinking");
-        onToolCallRef.current?.({ name: item.name, arguments: args, call_id: item.call_id });
+        const callId = item.call_id;
+        openCallsRef.current.add(callId);
+        // Every call gets exactly one output, even if the handler throws or
+        // forgets, so the professor is never left waiting in silence.
+        Promise.resolve()
+          .then(() => onToolCallRef.current?.({ name: item.name, arguments: args, call_id: callId }))
+          .catch((err) => console.warn("[realtime] tool handler failed", item.name, err))
+          .finally(() => {
+            if (openCallsRef.current.has(callId)) answerCall(callId, `Not done: ${item.name} returned no result.`);
+          });
       }
     } else if (type === "response.done") {
+      responseActiveRef.current = false;
       setStatus("listening");
+      flushResponse();
     } else if (type === "error") {
-      setError("I lost the voice connection. You can try again or type your question instead.");
-      setStatus("error");
+      // Server error events are almost always about one client event (a bad
+      // session.update, a response.create while one is active) and the
+      // session stays open, so report them instead of declaring the voice lost.
+      const e = ev.error ?? {};
+      console.warn("[realtime] server error", e.type, e.code, e.param, e.message, e.event_id);
+      setLastServerError({ code: e.code ?? null, param: e.param ?? null, message: e.message ?? "", at: Date.now() });
+      awaitingCreatedRef.current = false;
+      if (e.code === "conversation_already_has_active_response") {
+        responseActiveRef.current = true;
+        if (!wantResponseRef.current) wantResponseRef.current = {};
+      }
     }
-  }, []);
+  }, [answerCall, flushResponse]);
 
   const start = useCallback(
     async (studentContext, sessionConfig = {}) => {
@@ -105,7 +161,12 @@ export function useRealtimeVoice() {
       setUserTranscript("");
       setTutorText("");
       setStatus("connecting");
+      setLastServerError(null);
       onToolCallRef.current = sessionConfig.onToolCall ?? null;
+      responseActiveRef.current = false;
+      awaitingCreatedRef.current = false;
+      openCallsRef.current = new Set();
+      wantResponseRef.current = null;
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("unsupported");
@@ -127,6 +188,12 @@ export function useRealtimeVoice() {
         // 3. WebRTC connection to OpenAI Realtime.
         const pc = new RTCPeerConnection();
         pcRef.current = pc;
+        pc.onconnectionstatechange = () => {
+          if (pcRef.current === pc && pc.connectionState === "failed") {
+            setError("I lost the voice connection. You can try again or type your question instead.");
+            setStatus("error");
+          }
+        };
 
         const audioEl = new Audio();
         audioEl.autoplay = true;
@@ -184,36 +251,28 @@ export function useRealtimeVoice() {
     onToolCallRef.current = null;
   }, [cleanup]);
 
-  // Update the tutor's instructions and tools on a live session.
+  // Update the tutor's instructions and tools on a live session. The GA
+  // Realtime API (gpt-realtime over /v1/realtime/calls) expects the session
+  // type in every session.update; without it the update can be rejected and
+  // the tutor silently keeps its old tools.
   const updateSession = useCallback(
     (instructions, tools) => {
-      sendEvent({ type: "session.update", session: { instructions, ...(tools ? { tools } : {}) } });
+      sendEvent({ type: "session.update", session: { type: "realtime", instructions, ...(tools ? { tools } : {}) } });
     },
     [sendEvent]
   );
 
-  // Ask the tutor to start (or restart) speaking now.
+  // Ask the tutor to start (or restart) speaking as soon as it is free.
   const requestResponse = useCallback(
     (instructions) => {
-      sendEvent({
-        type: "response.create",
-        ...(instructions ? { response: { instructions } } : {})
-      });
+      wantResponseRef.current = instructions ? { instructions } : wantResponseRef.current ?? {};
+      flushResponse();
     },
-    [sendEvent]
+    [flushResponse]
   );
 
   // Answer a function call the tutor made, then let it speak again.
-  const sendFunctionCallOutput = useCallback(
-    (callId, output) => {
-      sendEvent({
-        type: "conversation.item.create",
-        item: { type: "function_call_output", call_id: callId, output }
-      });
-      requestResponse();
-    },
-    [sendEvent, requestResponse]
-  );
+  const sendFunctionCallOutput = answerCall;
 
   // Tell the tutor something on screen (a button press or practice result)
   // as a quiet user-side note, then let it respond.
@@ -237,6 +296,8 @@ export function useRealtimeVoice() {
     error,
     userTranscript,
     tutorText,
+    bargeIns,
+    lastServerError,
     start,
     stop,
     updateSession,

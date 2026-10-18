@@ -108,13 +108,21 @@ export function explainResult(r) {
 // The opening example. The professor's instructions quote these exact values,
 // so the first words and the first picture always agree.
 export const DEFAULT_EXAMPLE = { items: [3, 7], value: 12 };
-export const defaultExampleText = (kind) =>
+
+// The value the student asked to add ("pushing 73 onto a stack"), if any, so
+// the planned demo uses the student's number instead of the default.
+export function requestedValue(text) {
+  const m = String(text ?? "").match(/\b(?:push|enqueue|add|insert)(?:ing|ed|es|s)?\b\D{0,20}?(-?\d+(?:\.\d+)?)/i);
+  return m ? Number(m[1]) : undefined;
+}
+
+export const defaultExampleText = (kind, value = DEFAULT_EXAMPLE.value) =>
   kind === "queue"
-    ? `Queue (front to rear): [3, 7]. Plan: enqueue(12) then dequeue().`
-    : `Stack (bottom to top): [3, 7]. Plan: push(12) then pop().`;
+    ? `Queue (front to rear): [3, 7]. Plan: enqueue(${value}) then dequeue().`
+    : `Stack (bottom to top): [3, 7]. Plan: push(${value}) then pop().`;
 
 let counter = 0;
-export function buildDsScene(kind, items) {
+export function buildDsScene(kind, items, value = DEFAULT_EXAMPLE.value) {
   const start = items && items.length ? items : DEFAULT_EXAMPLE.items;
   const struct = createStruct(kind, start);
   const q = kind === "queue";
@@ -154,7 +162,7 @@ export function buildDsScene(kind, items) {
       outId: q ? "outgoing" : "gate",
       statusId: "status",
       initial: [...struct.items],
-      plan: q ? [{ op: "enqueue", value: DEFAULT_EXAMPLE.value }, { op: "dequeue" }] : [{ op: "push", value: DEFAULT_EXAMPLE.value }, { op: "pop" }]
+      plan: q ? [{ op: "enqueue", value }, { op: "dequeue" }] : [{ op: "push", value }, { op: "pop" }]
     }
   };
 }
@@ -185,6 +193,7 @@ export function runSelfTests() {
   const again = applyOp(e.struct, "dequeue");
   t("repeating the same op on the same state is pure (replay applies nothing twice)", same(again.after, d.after) && same(e.struct.items, [10, 20, 30, 40]));
   t("unsupported op is refused", applyOp(q, "push", 1).ok === false);
+  t("reads the student's value", requestedValue("Show me how pushing 73 onto a stack works") === 73 && requestedValue("what is a stack") === undefined);
   t("detects queue and stack topics", detectKind("teach me how a queue works") === "queue" && detectKind("what about a stack instead") === "stack");
   return results;
 }

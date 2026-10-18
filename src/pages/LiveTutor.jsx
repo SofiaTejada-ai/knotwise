@@ -38,7 +38,7 @@ import { matchTemplate, templateSegments, toSegments } from "@/lib/visualSpec";
 
 import { createDirector, DIRECTOR_TOOL_NAMES } from "@/lib/sceneDirector";
 import { useAutoCamera } from "@/hooks/useAutoCamera";
-import { detectKind, buildDsScene } from "@/lib/dsEngine";
+import { detectKind, buildDsScene, requestedValue } from "@/lib/dsEngine";
 
 const TEACHING_TOOLS = [SHOW_SEGMENT_TOOL, CONFIRM_UNDERSTANDING_TOOL, MOVE_NODE_TOOL, ...DIRECTOR_TOOLS];
 
@@ -159,14 +159,22 @@ export default function LiveTutor() {
     paused: voice.status === "listening" && !!voice.userTranscript
   });
 
-  // A student interruption freezes visuals and drops queued commands, keeping
-  // the last committed state.
+  // A student interruption drops queued visual commands, keeping the last
+  // committed state. It fires when the student STARTS talking: the transcript
+  // arrives later, often after the professor already issued the command the
+  // student asked for, and must not cancel it.
   useEffect(() => {
-    if (phase === "teaching" && voice.userTranscript) {
-      directorRef.current.noteStudent(voice.userTranscript);
-      directorRef.current.interrupt();
-    }
+    if (phase === "teaching" && voice.bargeIns) directorRef.current.interrupt();
+  }, [voice.bargeIns]);
+  useEffect(() => {
+    if (phase === "teaching" && voice.userTranscript) directorRef.current.noteStudent(voice.userTranscript);
   }, [voice.userTranscript]);
+
+  // Surface rejected realtime client events (bad session.update, overlapping
+  // responses) in the console so tool registration problems are visible.
+  useEffect(() => {
+    if (voice.lastServerError) console.warn("[LiveTutor] realtime error", voice.lastServerError);
+  }, [voice.lastServerError]);
 
   // Remember what the professor explained (once a reply settles).
   useEffect(() => {
@@ -201,7 +209,12 @@ export default function LiveTutor() {
     const topicText = `${node.label} ${node.description ?? ""} ${question ?? ""}`;
     // Queues and stacks use the deterministic engine, not a generated scene.
     const dsKind = detectKind(node.id === "opening" ? question : `${node.label} ${question ?? ""}`);
-    if (dsKind) return sceneToSegments(buildDsScene(dsKind));
+    if (dsKind) {
+      const sc = buildDsScene(dsKind, undefined, requestedValue(question));
+      // A later topic on the same structure continues the active example.
+      sc.ds.carry = true;
+      return sceneToSegments(sc);
+    }
     // Preferred: a complete animated scene. If it cannot be built, fall back
     // to the simple technical diagram below.
     try {
@@ -226,6 +239,7 @@ export default function LiveTutor() {
     presentationRef.current = segs;
     setPresentation(segs);
     tutorRef.current.loadScene(segs?.scene ?? null);
+    directorRef.current.syncScene();
     orch.setVisual(segs?.scene ? "animated_scene" : segs?.visual?.source ?? "none", { source: segs?.visual?.source, steps: segs?.length ?? 0 });
   };
   // The professor switched to a new data-structure diagram mid-lesson.
@@ -272,6 +286,7 @@ export default function LiveTutor() {
     orch.setTopic(node.label, node.description);
     const cached = segCacheRef.current[node.id];
     tutorRef.current.loadScene(cached?.scene ?? null);
+    directorRef.current.syncScene();
     setPresentation(cached ?? null);
     presentationRef.current = cached ?? null;
     setSegIndex(null);
@@ -576,7 +591,10 @@ export default function LiveTutor() {
       }
     } else if (name === "move_to_node") {
       const m = mapRef.current;
-      if (!m) return;
+      if (!m) {
+        voice.sendFunctionCallOutput(call_id, "The lesson outline is not ready yet. Keep teaching the current part.");
+        return;
+      }
       if (args?.node_id === "wrap_up") {
         markDone(activeRef.current);
         setDoneNodes(m.nodes.map((n) => n.id));
