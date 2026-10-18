@@ -180,6 +180,39 @@ export const DIRECTOR_TOOLS = [
     { before_step_id: idParam("History id of the earlier step"), after_step_id: idParam("History id of the later step") },
     ["before_step_id", "after_step_id"]
   ),
+  tool(
+    "expand_diagram",
+    "Add new parts and the values that travel between them, to expand on the student's own question or idea. Only after the student agreed or asked for it. Parts are placed automatically; old unused parts may be removed to make room. New steps are played afterwards with play_step.",
+    {
+      student_consented: { type: "boolean", description: "true only if the student said yes to your offer to expand, or asked you to show/expand/give an example of their idea" },
+      idea: idParam("The student's idea or question this expansion shows, in a few words"),
+      new_parts: {
+        type: "array",
+        description: "0 to 4 new parts (real components)",
+        items: {
+          type: "object",
+          properties: {
+            id: idParam("New unique id, lowercase letters, digits or _"),
+            type: { type: "string", enum: ["host", "server", "database", "router", "firewall", "cloud", "user", "robot", "gear", "lock", "key", "flag", "bug", "bucket", "packet", "circle", "queue", "linked_node", "note"] },
+            label: idParam("Short label, up to 28 characters"),
+            items: { type: "array", items: { type: "string" }, description: "Only for type queue: messages waiting inside" }
+          },
+          required: ["id", "type", "label"]
+        }
+      },
+      steps: {
+        type: "array",
+        description: "1 to 5 steps in order: what travels from one part to another (new or existing parts)",
+        items: {
+          type: "object",
+          properties: { from: idParam("Source part id"), to: idParam("Destination part id"), value: idParam("What travels, up to 24 characters"), description: idParam("One sentence explaining this step") },
+          required: ["from", "to", "description"]
+        }
+      },
+      remove_ids: { type: "array", items: { type: "string" }, description: "Optional: old parts that are no longer needed" }
+    },
+    ["student_consented", "idea"]
+  ),
   tool("return_to_previous_focus", "Move the camera back to where the lesson was before the review detour."),
   tool("resume_original_teaching_path", "End the review and continue the original lesson: restores the real state, moves the camera to the right next part, and tells you the next step. Completed operations never run again."),
 
@@ -229,7 +262,7 @@ export const DIRECTOR_TOOLS = [
 // Added to the tutor instructions: the professor directs the camera.
 export const DIRECTOR_RULES = `
 TEACHING STYLE (always): you are a teacher standing at a whiteboard, and the diagram is your board.
-- Speak slowly and calmly in short sentences, and pause briefly after each important idea. Never rush. One operation or one idea at a time.
+- Speak noticeably slower than normal conversation, in short sentences, and pause after each important idea. Never rush. One operation or one idea at a time.
 - Point at the board while you talk ("look at the top of the stack, here"), and let each animation finish before you move on.
 - Teach with several examples when appropriate: after the first demonstration, give a second example with new values (create_example) and an everyday example. Do not end a topic after a single operation.
 - Check understanding along the way: ask the student to predict the next result ("what will pop return now?"), wait for the answer, then show it.
@@ -258,6 +291,13 @@ ONE SHARED EXAMPLE (the most important rule): your words and the diagram use the
 - "Show that again (slowly)": animate_operation with speed "slower". Never perform the operation again.
 - "A different example, but slower": create_example, then perform_operation, then animate_operation with speed "slower" if they want to see it again.
 - "How would this differ with a queue?": create_example with kind queue and the SAME current values, then enqueue and dequeue and contrast FIFO with LIFO.
+
+EXPANDING ON THE STUDENT'S IDEAS (the board grows with the conversation):
+- When the student raises a new angle ("why would anyone need it?", "what if...?", "how is that different from...?", their own theory), first answer briefly in words.
+- If showing it on the board would really help, OFFER and wait: for example "Would you like me to add that to the diagram, with an example of a busy web shop sending orders?" Do not change the diagram before they answer.
+- If they say yes, or they already asked you to show, draw, expand or give an example of their idea, call expand_diagram with student_consented true: 1 to 4 new real parts and 1 to 5 steps showing what actually travels between them. Connect to existing part ids when it fits; put old parts that no longer matter in remove_ids when the board is crowded.
+- Never set student_consented true unless the student agreed or asked. If they say no, keep explaining in words.
+- After the result arrives, point at the new parts, then play the new steps one at a time with play_step, explaining after each. For queue or stack values use create_example instead.
 
 GOING BACK AND REVISITING (the student speaks naturally and never names parts, steps or buttons; YOU decide where to point):
 - Interpret what the student means in context, then choose the command. If unsure what they refer to, call get_teaching_history. Say one short sentence ("Sure, let's go back to the attacker"), then call the command.

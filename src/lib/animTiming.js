@@ -9,13 +9,14 @@ export const timing = { scale: 1, playback: 1 };
 // Per-animation base durations in seconds (not one global speed).
 // Tuned for a classroom pace: a moving value stays readable for ~2s.
 export const DUR = {
-  highlight: 0.6, // node highlight (total)
-  camera: 1.2, // camera focus
-  arrow: 0.6, // arrow activation
-  transfer: 2.0, // value travelling along an arrow
-  enter: 0.7, // value entering a box
-  emphasis: 0.8, // state update emphasis
-  hold: 0.7 // pause on a result so the student can read it
+  highlight: 0.7, // node highlight (total)
+  camera: 1.4, // camera focus
+  arrow: 0.8, // arrow activation
+  transfer: 2.4, // value travelling along an arrow
+  enter: 0.8, // value entering a box
+  emphasis: 0.9, // state update emphasis
+  hold: 0.9, // pause on a result so the student can read it
+  step: 1.5 // multiplier for scene steps (packets and arrows between parts)
 };
 
 export const SPEEDS = { normal: 1, slower: 0.65, very_slow: 0.4 };

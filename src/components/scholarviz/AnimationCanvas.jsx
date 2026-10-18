@@ -14,7 +14,7 @@ function el(tag, attrs = {}) {
 }
 
 function addStepToTimeline(tl, step, layer, scene, onUpdateObject, reg) {
-  const dur = scaled(Math.max(0.3, Math.min(3, Number(step.duration) || 1)));
+  const dur = scaled(Math.max(0.8, Math.min(4.5, (Number(step.duration) || 1) * DUR.step)));
   const color = step.color || "#4f9eff";
   const pos = (id) => {
     const o = (scene.objects ?? []).find((x) => x.id === id);
@@ -42,8 +42,8 @@ function addStepToTimeline(tl, step, layer, scene, onUpdateObject, reg) {
       }
       layer.appendChild(g);
       tl.set(g, { x: a.x, y: a.y });
-      tl.to(g, { x: b.x, y: b.y, duration: dur * 0.35, ease: "power1.inOut" });
-      tl.to(g, { opacity: 0, duration: 0.25 });
+      tl.to(g, { x: b.x, y: b.y, duration: dur * 0.6, ease: "power1.inOut" });
+      tl.to(g, { opacity: 0, duration: 0.35 });
       break;
     }
     case "pulse": {
@@ -232,13 +232,13 @@ const AnimationCanvas = forwardRef(function AnimationCanvas({
         if (showDot && travelRef.current) {
           dot = el("circle", { r: 8, cx: A.x, cy: A.y, fill: "#4f9eff", filter: "url(#packetGlow)", "data-cam-dot": "1" });
           travelRef.current.appendChild(dot);
-          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : scaled(1.7), ease: "power1.inOut" });
+          gsap.to(dot, { attr: { cx: B.x, cy: B.y }, duration: reduced() ? 0 : scaled(2.2), ease: "power1.inOut" });
         }
         const mv = viewFor({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, 1.2);
-        await camTo(mv.x, mv.y, 1.2, 0.8, "power1.in");
+        await camTo(mv.x, mv.y, 1.2, 1.0, "power1.in");
         if (camSeq.current !== mine) return; // a newer camera command took over
         const bv = viewFor(B, 1.7);
-        await camTo(bv.x, bv.y, 1.7, 0.9, "power2.out");
+        await camTo(bv.x, bv.y, 1.7, 1.1, "power2.out");
         if (dot) gsap.to(dot, { opacity: 0, duration: 0.3, onComplete: () => dot.remove() });
       },
       // Pulses a node (the "this is what we are talking about" highlight).

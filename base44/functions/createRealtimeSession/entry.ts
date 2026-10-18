@@ -3,6 +3,9 @@ import { secrets } from 'base44:runtime';
 
 const MODEL = 'gpt-realtime';
 const VOICE = 'marin';
+// Slightly slower than normal speech: a teaching pace. If the API ever
+// rejects the field, the session is created again without it.
+const SPEECH_SPEED = 0.9;
 
 const BASE_INSTRUCTIONS = `You are the live voice tutor inside Safe Steps, a calm learning app that helps students with ADHD or autism learn to spot scam text messages by practicing on example messages.
 
@@ -62,7 +65,7 @@ export default async function(req) {
           .join('')
       : null;
 
-    const openaiRes = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+    const createSecret = (speed) => fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -82,7 +85,7 @@ export default async function(req) {
               : BASE_INSTRUCTIONS,
           ...(tools && tools.length ? { tools } : {}),
           audio: {
-            output: { voice: VOICE },
+            output: { voice: VOICE, ...(speed ? { speed } : {}) },
             input: {
               transcription: { model: 'whisper-1' },
               turn_detection: { type: 'server_vad' }
@@ -92,6 +95,13 @@ export default async function(req) {
       }),
       signal: AbortSignal.timeout(15000)
     });
+
+    let openaiRes = await createSecret(SPEECH_SPEED);
+    if (openaiRes.status === 400) {
+      const errBody = await openaiRes.text().catch(() => "");
+      console.log("createRealtimeSession: retrying without speed", errBody.slice(0, 300));
+      openaiRes = await createSecret(null);
+    }
 
     if (!openaiRes.ok) {
       const errBody = await openaiRes.text().catch(() => "");

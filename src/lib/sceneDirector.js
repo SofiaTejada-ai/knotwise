@@ -4,6 +4,7 @@ import { createTextCommands, TEXT_TOOL_NAMES } from "@/lib/textCommands";
 import { trace } from "@/lib/lessonTrace";
 import { createHistory } from "@/lib/teachingHistory";
 import { createRevisit, REVISIT_TOOL_NAMES } from "@/lib/revisitCommands";
+import { createExpandCommands, EXPAND_TOOL_NAMES } from "@/lib/expandDiagram";
 import {
   KINDS,
   RULES,
@@ -59,7 +60,8 @@ export const DIRECTOR_TOOL_NAMES = [
   "ds_state",
   ...Object.keys(EXAMPLE_ALIASES),
   ...REVISIT_TOOL_NAMES,
-  ...TEXT_TOOL_NAMES
+  ...TEXT_TOOL_NAMES,
+  ...EXPAND_TOOL_NAMES
 ];
 
 const STATE_KEYS = ["items", "value", "label", "color", "text"];
@@ -364,7 +366,17 @@ export function createDirector(api) {
     }
   };
 
-  Object.assign(commands, rv.commands, text.commands);
+  // Parts of a live data structure are never dropped to make room.
+  const expand = createExpandCommands({
+    api,
+    validIds,
+    keepIds: () => {
+      const m = getDs()?.meta;
+      return m ? [m.structId, m.inId, m.outId, m.statusId] : [];
+    }
+  });
+
+  Object.assign(commands, rv.commands, text.commands, expand.commands);
 
   const run = (name, args = {}) => {
     name = EXAMPLE_ALIASES[name] || name;
