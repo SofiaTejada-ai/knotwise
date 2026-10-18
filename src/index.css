@@ -3,6 +3,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Function graph lesson */
+.fg-root :focus-visible { outline: 3px solid #1F7A7A; outline-offset: 2px; }
+.fg-root.fg-reduce *, .fg-root.fg-reduce *::before, .fg-root.fg-reduce *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fg-root *, .fg-root *::before, .fg-root *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+.fg-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; cursor: pointer; }
+.fg-slider:disabled { opacity: 0.45; cursor: not-allowed; }
+.fg-slider::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #D9D3C7; }
+.fg-slider::-moz-range-track { height: 12px; border-radius: 6px; background: #D9D3C7; }
+.fg-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; margin-top: -8px; border-radius: 50%; background: #2E8B8B; border: 3px solid #fff; box-shadow: 0 0 0 1px #1F7A7A; }
+.fg-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #2E8B8B; border: 3px solid #fff; box-shadow: 0 0 0 1px #1F7A7A; }
+.fg-slider:focus-visible { outline: none; }
+.fg-slider:focus-visible::-webkit-slider-thumb { outline: 3px solid #1B2A49; outline-offset: 3px; }
+.fg-slider:focus-visible::-moz-range-thumb { outline: 3px solid #1B2A49; outline-offset: 3px; }
+
 @layer base {
   :root {
     --background: 0 0% 100%;

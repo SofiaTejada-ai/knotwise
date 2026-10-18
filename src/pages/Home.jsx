@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Mic, FileSearch, ShieldCheck, ArrowRight } from "lucide-react";
+import { Mic, FileSearch, ShieldCheck, ArrowRight, LineChart } from "lucide-react";
 import SessionHistory from "@/components/home/SessionHistory";
 
 const ROUTES = [
@@ -15,6 +15,12 @@ const ROUTES = [
     icon: FileSearch,
     title: "Research",
     text: "Upload a class document and learn it with clear diagrams, exact quotes from your material, and short checks."
+  },
+  {
+    to: "/graph-lesson",
+    icon: LineChart,
+    title: "Function Graphs",
+    text: "Guess first, then drag a slider and watch a line, curve or wave change. Works offline."
   },
   {
     to: "/lesson",
@@ -68,7 +74,7 @@ export default function Home() {
       </section>
 
       <section className="mx-auto max-w-6xl px-6 pb-20">
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {ROUTES.map((route) => (
             <Link
               key={route.to}

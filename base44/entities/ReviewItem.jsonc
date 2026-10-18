@@ -1,0 +1,29 @@
+{
+  "name": "ReviewItem",
+  "type": "object",
+  "properties": {
+    "concept": {
+      "type": "string",
+      "description": "The idea the student missed"
+    },
+    "missCount": {
+      "type": "number",
+      "description": "How many times it was missed"
+    },
+    "nextReviewDate": {
+      "type": "string",
+      "format": "date",
+      "description": "When to review it next"
+    },
+    "lessonId": {
+      "type": "string",
+      "description": "Which lesson the question came from"
+    }
+  },
+  "required": [
+    "concept",
+    "missCount",
+    "nextReviewDate",
+    "lessonId"
+  ]
+}
