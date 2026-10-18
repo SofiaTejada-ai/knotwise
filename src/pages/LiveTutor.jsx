@@ -547,13 +547,30 @@ export default function LiveTutor() {
     try {
       let sections;
       if (v.kind === "pdf") {
-        set({ status: "uploading", name });
-        const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+        // Fast path: read the PDF's text layer right here in the browser.
         set({ status: "reading", name });
-        const res = await base44.functions.invoke("extractDocument", { file_uri, fileName: name });
-        const text = res?.data?.document?.fullText;
-        if (!text) throw new Error(res?.data?.error || "No readable text was found in this document.");
-        sections = sectionsFromPagedText(text);
+        let read = null;
+        try {
+          const { extractPdfSections, looksScanned } = await import("@/lib/pdfText");
+          read = await extractPdfSections(new Uint8Array(await file.arrayBuffer()), (n, total) =>
+            set({ status: "reading", name, progress: `page ${n} of ${total}` })
+          );
+          if (looksScanned(read)) read = null;
+        } catch (err) {
+          read = null;
+        }
+        if (read) sections = read.sections;
+        else {
+          // Scanned (image-only) PDF: the server reader can read images, but
+          // it takes a while, so say so.
+          set({ status: "uploading", name, progress: "scanned PDF, this can take a minute" });
+          const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+          set({ status: "reading", name, progress: "scanned PDF, this can take a minute" });
+          const res = await base44.functions.invoke("extractDocument", { file_uri, fileName: name });
+          const text = res?.data?.document?.fullText;
+          if (!text) throw new Error(res?.data?.error || "No readable text was found in this document.");
+          sections = sectionsFromPagedText(text);
+        }
       } else {
         set({ status: "reading", name });
         const bytes = new Uint8Array(await file.arrayBuffer());

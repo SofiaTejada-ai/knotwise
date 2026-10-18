@@ -29,7 +29,8 @@ export default function DocumentBar({ doc, onPick, onRemove }) {
         ) : busy ? (
           <span className="flex items-center gap-1.5 pl-2">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {STEPS[doc.status]} {doc.name ? `"${doc.name}"` : ""}...
+            {STEPS[doc.status]} {doc.name ? `"${doc.name}"` : ""}
+            {doc.progress ? ` (${doc.progress})` : ""}...
           </span>
         ) : null}
 
