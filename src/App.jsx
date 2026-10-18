@@ -40,7 +40,8 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       {/* Add your page Route elements here */}
-      <Route path="/" element={<SafeSteps />} />
+      <Route path="/" element={<LiveTutor />} />
+      <Route path="/lesson" element={<SafeSteps />} />
       <Route path="/scholarviz" element={<ScholarViz />} />
       <Route path="/livetutor" element={<LiveTutor />} />
       <Route path="/review" element={<ReviewQuiz />} />

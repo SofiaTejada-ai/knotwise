@@ -155,6 +155,12 @@ export default function TutorHome({ onStart, error, busy }) {
               Open the research tool
             </Link>
           </p>
+          <p className="text-center text-xs text-slate-400">
+            Or practice with the original scam-message lesson.{" "}
+            <Link to="/lesson" className="underline hover:text-slate-600">
+              Open the lesson
+            </Link>
+          </p>
         </div>
       </div>
     </div>
